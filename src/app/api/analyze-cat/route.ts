@@ -11,6 +11,13 @@ const supabase = createClient(
 const HF_API_KEY = process.env.HUGGINGFACE_API_KEY
 
 export async function POST(req: Request) {
+  // บรรทัดนี้จะบอกเราทันทีว่าคีย์ไหนที่ Vercel มองไม่เห็น
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json({ success: false, error: "Missing SUPABASE_SERVICE_ROLE_KEY" }, { status: 500 });
+  }
+  if (!process.env.HUGGINGFACE_API_KEY) {
+    return NextResponse.json({ success: false, error: "Missing HUGGINGFACE_API_KEY" }, { status: 500 });
+  }
   try {
     const { imageBase64 } = await req.json()
     
