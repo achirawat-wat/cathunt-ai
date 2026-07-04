@@ -1,26 +1,85 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@layer base {
+  /* ตั้งค่าพื้นฐานสำหรับ Mobile App (ป้องกันซูมแปลกๆ และซ่อนสกอร์บาร์) */
+  html, body {
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ---------------------------------------------------- */
+/* ดูดสีแผนที่ออกให้เป็นขาวดำ (Monochrome) เพื่อให้หมุดส้มโดดเด่น */
+/* ---------------------------------------------------- */
+.custom-map-tiles {
+  filter: grayscale(100%) contrast(1.1) opacity(0.8);
+}
+@media (prefers-color-scheme: dark) {
+  .custom-map-tiles { 
+    filter: grayscale(100%) invert(100%) contrast(1.2) opacity(0.6); 
+  }
+}
+
+/* =========================================
+   🍃 Leaflet Map Ultra-Smooth Overrides
+   ========================================= */
+.leaflet-container {
+    background: #fcfcfc !important;
+}
+
+/* บังคับใช้ GPU ช่วยประมวลผลการซูมและลากแผนที่ (ลบ transition ออกเพื่อให้ Leaflet JS จัดการแทน) */
+.leaflet-fade-anim .leaflet-tile,
+.leaflet-zoom-anim .leaflet-zoom-animated,
+.leaflet-pan-anim .leaflet-map-pane {
+    will-change: transform;
+}
+
+/* ---------------------------------------------------- */
+/* ปรับแต่ง Leaflet Popup ให้เป็นทรง Round Square Minimal */
+/* ---------------------------------------------------- */
+.leaflet-popup-content-wrapper {
+  border-radius: 1.5rem !important;
+  box-shadow: 0 10px 40px -10px rgba(0,0,0,0.1) !important;
+  border: 1px solid #f4f4f5 !important; /* border-zinc-100 */
+  overflow: hidden !important;
+  /* เพิ่มความนุ่มตอน Popup เด้ง */
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.leaflet-popup-content {
+  margin: 12px !important;
+}
+
+.leaflet-popup-tip {
+  background: white !important;
+}
+
+.leaflet-container a.leaflet-popup-close-button {
+  display: none !important; /* ซ่อนปุ่ม X ออกไปเพื่อความคลีน */
+}
+
+/* รองรับ Dark Mode สำหรับ Popup บนแผนที่ */
+@media (prefers-color-scheme: dark) {
+  .leaflet-popup-content-wrapper {
+    background-color: #09090b !important; /* bg-zinc-950 */
+    border-color: #27272a !important; /* border-zinc-800 */
+    box-shadow: none !important;
+    color: #fff !important;
+  }
+  .leaflet-popup-tip {
+    background: #09090b !important; /* bg-zinc-950 */
+  }
+  .leaflet-container {
+    background: #09090b !important;
+  }
 }
