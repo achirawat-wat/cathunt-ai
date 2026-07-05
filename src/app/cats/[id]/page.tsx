@@ -54,7 +54,6 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
         .from('cats')
         .select('*')
         .eq('id', catId)
-        .eq('is_training', false)
         .single()
 
       if (catError) throw catError
@@ -64,6 +63,7 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
         .from('encounters')
         .select('image_url, created_at, profiles(username, avatar_url), description')
         .eq('cat_id', catId)
+        .eq('is_training', false)
         .order('created_at', { ascending: false })
 
       if (encError) throw encError

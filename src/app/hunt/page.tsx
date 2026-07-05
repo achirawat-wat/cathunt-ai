@@ -23,27 +23,27 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
 export default function HuntPage() {
   const router = useRouter()
   const { user } = useAuthStore()
-  
+
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  
+
   const [hasCameraError, setHasCameraError] = useState(false)
   const [isCameraReady, setIsCameraReady] = useState(false)
-  
+
   // 📸 State สำหรับรูปภาพ (Index 0 = หน้าปก, Index 1, 2, 3 = มุมสอน AI)
   const [capturedImages, setCapturedImages] = useState<{ url: string, blob: Blob, vector: number[] }[]>([])
   const [location, setLocation] = useState<{ lat: number; lng: number; name: string } | null>(null)
-  
+
   const [tempImageUrl, setTempImageUrl] = useState<string | null>(null)
-  
+
   const [status, setStatus] = useState<'idle' | 'scanning' | 'result' | 'training'>('idle')
   const [matchType, setMatchType] = useState<'known' | 'new' | null>(null)
   const [matchedCat, setMatchedCat] = useState<any>(null)
-  
+
   const [newCatName, setNewCatName] = useState('')
   const [description, setDescription] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  
+
   const [showCatList, setShowCatList] = useState(false)
   const [allCats, setAllCats] = useState<any[]>([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -74,10 +74,10 @@ export default function HuntPage() {
     }
 
     startCamera()
-    
+
     const fetchCatsAndEncounters = async () => {
       const { data: catsData } = await supabase.from('cats').select('id, name, area')
-      
+
       const { data: encountersData } = await supabase
         .from('encounters')
         .select('cat_id, user_id, lat, lng')
@@ -88,7 +88,7 @@ export default function HuntPage() {
           const catEncounters = encountersData?.filter(e => e.cat_id === cat.id) || []
           const userInteracted = catEncounters.some(e => e.user_id === user.id)
           const latestLoc = catEncounters.find(e => e.lat && e.lng)
-          
+
           return {
             ...cat,
             hasInteracted: userInteracted,
@@ -134,7 +134,7 @@ export default function HuntPage() {
       const video = videoRef.current
       const canvas = canvasRef.current
       const ctx = canvas.getContext('2d')
-      
+
       if (ctx) {
         const size = Math.min(video.videoWidth, video.videoHeight)
         const startX = (video.videoWidth - size) / 2
@@ -142,14 +142,14 @@ export default function HuntPage() {
 
         canvas.width = 512
         canvas.height = 512
-        
+
         ctx.drawImage(video, startX, startY, size, size, 0, 0, 512, 512)
-        
+
         const base64Image = canvas.toDataURL('image/jpeg', 0.8)
-        
+
         setTempImageUrl(base64Image)
         setStatus('scanning')
-        
+
         const blob = await new Promise<Blob>((resolve) => {
           canvas.toBlob((b) => resolve(b!), 'image/jpeg', 0.8)
         })
@@ -160,7 +160,7 @@ export default function HuntPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ imageBase64: base64Image })
           })
-          
+
           const result = await res.json()
           setTempImageUrl(null)
 
@@ -182,7 +182,7 @@ export default function HuntPage() {
               setStatus('result')
             } else {
               setMatchType('new')
-              setStatus('training') 
+              setStatus('training')
             }
           } else {
             // ถ้าโหมดเทรน ถ่ายรูปครบ 4 รูปแล้ว (ปก 1 + สอน 3) ถึงจะไปหน้าถัดไป
@@ -222,7 +222,7 @@ export default function HuntPage() {
           setIsSubmitting(false)
           return
         }
-        
+
         const { data: newCat, error: catError } = await supabase
           .from('cats')
           .insert({
@@ -239,8 +239,8 @@ export default function HuntPage() {
         await supabase.from('cats').update({ last_seen: new Date().toISOString() }).eq('id', finalCatId)
       }
 
-      const finalDescription = description.trim() !== '' 
-        ? description.trim() 
+      const finalDescription = description.trim() !== ''
+        ? description.trim()
         : (matchType === 'new' ? `New discovery: ${newCatName}` : `Spotted ${matchedCat?.name}`)
 
       // 🌟 2. บันทึกโพสต์หลัก (ตัวนี้แหละที่จะไปโชว์บนฟีด)
@@ -331,7 +331,7 @@ export default function HuntPage() {
 
       if (a.hasInteracted && !b.hasInteracted) return -1
       if (!a.hasInteracted && b.hasInteracted) return 1
-      
+
       return a.distance - b.distance
     })
 
@@ -347,19 +347,43 @@ export default function HuntPage() {
         </div>
       ) : (
         <>
-          <video ref={videoRef} autoPlay playsInline muted className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${isCameraReady && !tempImageUrl && status !== 'result' ? 'opacity-100' : 'opacity-0'}`} />
-          
-          {/* ภาพฟรีซชั่วคราว */}
-          {tempImageUrl && (
-            <img src={tempImageUrl} alt="Scanning" className="absolute inset-0 w-full h-full object-cover" />
-          )}
+          {/* พื้นหลังดำเต็มจอ - จะเห็นเป็นแถบบน-ล่างรอบกรอบสี่เหลี่ยมจัตุรัส */}
+          <div className="absolute inset-0 bg-black" />
 
-          {/* ภาพหน้าปกตอนเสร็จ (จะโชว์เสมอในหน้า Result) */}
-          {capturedImages.length > 0 && status === 'result' && !tempImageUrl && (
-             <img src={capturedImages[0].url} alt="Cover" className="absolute inset-0 w-full h-full object-cover" />
-          )}
-          
-          <div className="absolute inset-0 bg-black/10 pointer-events-none"></div>
+          {/* กรอบสี่เหลี่ยมจัตุรัสตรงกลางจอ = พื้นที่จริงที่ระบบจะ crop ไปวิเคราะห์และบันทึก */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="relative w-full aspect-square max-h-full overflow-hidden">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${isCameraReady && !tempImageUrl && status !== 'result' ? 'opacity-100' : 'opacity-0'}`}
+              />
+
+              {/* ภาพฟรีซชั่วคราว */}
+              {tempImageUrl && (
+                <img src={tempImageUrl} alt="Scanning" className="absolute inset-0 w-full h-full object-cover" />
+              )}
+
+              {/* ภาพหน้าปกตอนเสร็จ (จะโชว์เสมอในหน้า Result) */}
+              {capturedImages.length > 0 && status === 'result' && !tempImageUrl && (
+                <img src={capturedImages[0].url} alt="Cover" className="absolute inset-0 w-full h-full object-cover" />
+              )}
+
+              <div className="absolute inset-0 bg-black/10 pointer-events-none"></div>
+
+              {/* กรอบเล็งแบบ Minimal ติดกับขอบสี่เหลี่ยมจัตุรัสจริง (หายไปตอนฟรีซภาพ) */}
+              {(status === 'idle' || status === 'training') && isCameraReady && !tempImageUrl && (
+                <div className="absolute inset-3 pointer-events-none opacity-70">
+                  <div className="absolute top-0 left-0 w-8 h-8 border-t-[1.5px] border-l-[1.5px] border-white rounded-tl-2xl"></div>
+                  <div className="absolute top-0 right-0 w-8 h-8 border-t-[1.5px] border-r-[1.5px] border-white rounded-tr-2xl"></div>
+                  <div className="absolute bottom-0 left-0 w-8 h-8 border-b-[1.5px] border-l-[1.5px] border-white rounded-bl-2xl"></div>
+                  <div className="absolute bottom-0 right-0 w-8 h-8 border-b-[1.5px] border-r-[1.5px] border-white rounded-br-2xl"></div>
+                </div>
+              )}
+            </div>
+          </div>
         </>
       )}
 
@@ -371,17 +395,6 @@ export default function HuntPage() {
       </div>
 
       <div className="relative z-10 flex-1 flex flex-col items-center justify-center pointer-events-none">
-        
-        {/* กรอบเล็งแบบ Minimal (หายไปตอนฟรีซภาพ) */}
-        {(status === 'idle' || status === 'training') && isCameraReady && !tempImageUrl && (
-          <div className="relative w-64 h-64 flex flex-col items-center justify-center opacity-60">
-            <div className="absolute top-0 left-0 w-8 h-8 border-t-[1.5px] border-l-[1.5px] border-white rounded-tl-2xl"></div>
-            <div className="absolute top-0 right-0 w-8 h-8 border-t-[1.5px] border-r-[1.5px] border-white rounded-tr-2xl"></div>
-            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-[1.5px] border-l-[1.5px] border-white rounded-bl-2xl"></div>
-            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-[1.5px] border-r-[1.5px] border-white rounded-br-2xl"></div>
-          </div>
-        )}
-
         {status === 'scanning' && (
           <div className="flex flex-col items-center justify-center bg-black/40 backdrop-blur-xl px-6 py-4 rounded-2xl animate-in zoom-in-95">
             <Loader2 className="h-6 w-6 text-white animate-spin mb-3" />
@@ -392,10 +405,10 @@ export default function HuntPage() {
 
       {/* แถบเมนูด้านล่าง */}
       <div className="relative z-10 w-full mt-auto pb-[120px]">
-        
+
         {(status === 'idle' || status === 'training') && isCameraReady && (
           <div className="flex flex-col items-center justify-center pb-4 space-y-4">
-            
+
             {status === 'training' && !tempImageUrl && (
               <div className="bg-black/40 backdrop-blur-md px-5 py-2 rounded-full text-white font-bold text-xs tracking-wider animate-in fade-in zoom-in duration-300">
                 {/* คำนวณคำอธิบายให้ตรงกับ Index ของ Array */}
@@ -421,7 +434,7 @@ export default function HuntPage() {
             <button onClick={() => handleCapture(status === 'training')} className="w-20 h-20 rounded-full border-[3px] border-white/50 flex items-center justify-center active:scale-95 p-1.5 group mt-2">
               <div className="w-full h-full rounded-full bg-white group-active:bg-zinc-200"></div>
             </button>
-            
+
             {status === 'training' && (
                <button onClick={() => setShowCatList(true)} className="text-sm font-bold text-white underline underline-offset-4 pt-2 shadow-sm drop-shadow-md">
                  ฉันรู้จักแมวตัวนี้อยู่แล้ว (ข้ามการฝึก)
@@ -437,14 +450,14 @@ export default function HuntPage() {
                 <h3 className="font-black text-xl">เลือกรายชื่อแมว</h3>
                 <button onClick={() => setShowCatList(false)}><X className="w-6 h-6 text-zinc-400"/></button>
               </div>
-              
+
               <div className="relative mb-4">
                 <Search className="absolute left-3 top-3 w-5 h-5 text-zinc-400" />
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="ค้นหาชื่อแมว..." 
+                  placeholder="ค้นหาชื่อแมว..."
                   className="w-full bg-zinc-100 rounded-xl h-12 pl-10 pr-4 outline-none font-bold text-zinc-700 focus:ring-2 focus:ring-orange-500"
                 />
               </div>
@@ -468,7 +481,7 @@ export default function HuntPage() {
                           {cat.hasInteracted && !isAIMatch && <span className="text-[9px] bg-green-100 text-green-600 px-2 py-0.5 rounded-full font-bold">⭐ เคยเจอแล้ว</span>}
                         </div>
                         <span className="text-xs text-zinc-400 flex items-center mt-1">
-                          {cat.area} 
+                          {cat.area}
                           {cat.distance !== Infinity && ` • ห่าง ${cat.distance < 1 ? (cat.distance * 1000).toFixed(0) + ' ม.' : cat.distance.toFixed(1) + ' กม.'}`}
                         </span>
                       </div>
@@ -483,7 +496,7 @@ export default function HuntPage() {
         {status === 'result' && !showCatList && (
           <div className="px-4">
             <div className="w-full bg-white rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 text-zinc-900 relative">
-              
+
               <div className="absolute top-6 right-6">
                 <div className="flex items-center space-x-1 text-green-500">
                   <Navigation className="h-3 w-3 fill-green-500" />
@@ -497,7 +510,7 @@ export default function HuntPage() {
                     <Check className="h-4 w-4" />
                     <span className="font-bold text-[10px] uppercase">Match Found</span>
                   </div>
-                  
+
                   <div className="flex items-center space-x-4 mb-4">
                     <div className="w-16 h-16 rounded-[1.2rem] bg-zinc-100 overflow-hidden">
                       <img src={capturedImages[0].url} alt="Cat" className="w-full h-full object-cover" />
@@ -532,7 +545,7 @@ export default function HuntPage() {
                     <Plus className="h-4 w-4" />
                     <span className="font-bold text-[10px] uppercase">New Discovery</span>
                   </div>
-                  
+
                   <div className="space-y-4 mb-6">
                     <input type="text" value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="ตั้งชื่อน้องแมวตัวใหม่" className="w-full bg-zinc-50 rounded-[1.2rem] h-14 px-5 font-bold outline-none border-2 border-orange-100 focus:border-orange-500" />
                     <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="รายละเอียดเพิ่มเติม (Optional)" className="w-full bg-zinc-50 rounded-[1.2rem] h-14 px-5 font-bold outline-none" />
