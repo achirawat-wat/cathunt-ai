@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import sharp from 'sharp' // 👈 นำเข้าตัวช่วยตัดรูป
+import sharp from 'sharp'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -21,21 +21,24 @@ export async function POST(req: Request) {
 
     // ==========================================
     // 1. ด่านแรก: หาพิกัด (Bounding Box) ของตัวแมว
-    // เปลี่ยนมาใช้โมเดล detr-resnet-50 ที่เก่งเรื่องการตีกรอบวัตถุ
     // ==========================================
     const detectRes = await fetch(`${HF_BASE_URL}/facebook/detr-resnet-50`, {
-      headers: { 
+      headers: {
         Authorization: `Bearer ${HF_API_KEY}`,
-        "Content-Type": "application/octet-stream"
+        "Content-Type": "image/jpeg"
       },
       method: "POST",
       body: imageBuffer,
     })
-    
-    if (!detectRes.ok) throw new Error(`AI Detect error: ${detectRes.status}`)
+
+    // ✅ แก้: ดึง error message จริงออกมาดูก่อน throw
+    if (!detectRes.ok) {
+      const errText = await detectRes.text()
+      console.error("🚨 HF Detect Error:", errText)
+      throw new Error(`AI Detect error: ${detectRes.status} - ${errText}`)
+    }
     const detectData = await detectRes.json()
 
-    // ค้นหากล่อง (Bounding Box) ที่ AI มั่นใจที่สุดว่าเป็น 'cat'
     const catDetection = detectData.find((item: any) => item.label === 'cat' && item.score > 0.5)
 
     if (!catDetection) {
@@ -46,8 +49,7 @@ export async function POST(req: Request) {
     // 2. ด่านสอง: ตัดรูป (Crop) เอาเฉพาะเนื้อแมวล้วนๆ
     // ==========================================
     const { xmin, ymin, xmax, ymax } = catDetection.box
-    
-    // คำนวณความกว้าง/สูง และปัดเศษป้องกัน Error
+
     const cropLeft = Math.max(0, Math.round(xmin))
     const cropTop = Math.max(0, Math.round(ymin))
     const cropWidth = Math.round(xmax - xmin)
@@ -55,12 +57,10 @@ export async function POST(req: Request) {
 
     console.log(`✂️ AI กำลังตัดรูปแมวที่พิกัด: ${cropLeft}, ${cropTop} ขนาด: ${cropWidth}x${cropHeight}`)
 
-    // ใช้ sharp ตัดรูปจาก Buffer เดิม
     const croppedBuffer = await sharp(imageBuffer)
       .extract({ left: cropLeft, top: cropTop, width: cropWidth, height: cropHeight })
       .toBuffer()
 
-    // แปลงกลับเป็น Base64 แบบเต็มยศเพื่อส่งให้ Jina
     const croppedBase64 = `data:image/jpeg;base64,${croppedBuffer.toString('base64')}`
 
     // ==========================================
@@ -79,17 +79,22 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         model: "jina-clip-v1",
         input: [
-          { image: croppedBase64 } // 👈 โยนรูปที่มีแค่ตัวแมวเน้นๆ เข้าไป!
+          { image: croppedBase64 }
         ]
       })
     })
 
-    if (!embedRes.ok) throw new Error(`Jina Embedding error: ${embedRes.status}`)
+    // ✅ แก้: ดึง error message จริงออกมาดูก่อน throw เหมือนกัน
+    if (!embedRes.ok) {
+      const errText = await embedRes.text()
+      console.error("🚨 Jina Embed Error:", errText)
+      throw new Error(`Jina Embedding error: ${embedRes.status} - ${errText}`)
+    }
     const embedData = await embedRes.json()
     const catVector = embedData?.data?.[0]?.embedding
 
-    if (!Array.isArray(catVector) || catVector.length !== 512) {
-        throw new Error(`Vector Mismatch: ได้ ${catVector?.length || 0} มิติแทนที่จะเป็น 512`);
+    if (!Array.isArray(catVector) || catVector.length !== 768) {
+        throw new Error(`Vector Mismatch: ได้ ${catVector?.length || 0} มิติแทนที่จะเป็น 768`);
     }
 
     // ==========================================
@@ -97,21 +102,21 @@ export async function POST(req: Request) {
     // ==========================================
     const { data: matchedCats, error } = await supabase.rpc('match_cats', {
       query_embedding: catVector,
-      match_threshold: 0.78, // 👈 กลับมาใช้ 0.85 ได้แล้ว เพราะ Vector ตอนนี้สะอาดมาก (ไม่มีฉากหลังกวน)
+      match_threshold: 0.78,
       match_count: 1
     })
 
     if (error) throw error
 
-    return NextResponse.json({ 
-      success: true, 
-      matchType: matchedCats && matchedCats.length > 0 ? 'known' : 'new', 
+    return NextResponse.json({
+      success: true,
+      matchType: matchedCats && matchedCats.length > 0 ? 'known' : 'new',
       cat: matchedCats?.[0] || null,
-      vector: catVector 
+      vector: catVector
     })
 
   } catch (error: any) {
     console.error('Analyze API Fatal Error:', error)
-    return NextResponse.json({ success: false, error: 'ระบบวิเคราะห์ขัดข้องชั่วคราว プロドลองใหม่อีกครั้ง' }, { status: 503 })
+    return NextResponse.json({ success: false, error: 'ระบบวิเคราะห์ขัดข้องชั่วคราว โปรดลองใหม่อีกครั้ง' }, { status: 503 })
   }
 }

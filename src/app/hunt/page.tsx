@@ -2,23 +2,22 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { X, Loader2, Check, MapPin, Plus, Navigation, Search, Camera, UserCheck } from 'lucide-react'
+import { X, Loader2, Check, MapPin, Plus, Navigation, Search, Camera } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 
-// ฟังก์ชันคำนวณระยะทางระหว่างจุด 2 จุด (Haversine Formula) คืนค่าเป็น กิโลเมตร
-const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-  if (!lat1 || !lon1 || !lat2 || !lon2) return 9999;
-  const R = 6371;
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
-  const a = 
+function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return Infinity
+  const R = 6371
+  const dLat = (lat2 - lat1) * (Math.PI / 180)
+  const dLon = (lon2 - lon1) * (Math.PI / 180)
+  const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
 }
 
 export default function HuntPage() {
@@ -31,26 +30,25 @@ export default function HuntPage() {
   const [hasCameraError, setHasCameraError] = useState(false)
   const [isCameraReady, setIsCameraReady] = useState(false)
   
-  // 📸 State สำหรับรูปภาพ
+  // 📸 State สำหรับรูปภาพ (Index 0 = หน้าปก, Index 1, 2, 3 = มุมสอน AI)
   const [capturedImages, setCapturedImages] = useState<{ url: string, blob: Blob, vector: number[] }[]>([])
   const [location, setLocation] = useState<{ lat: number; lng: number; name: string } | null>(null)
   
-  // 🎯 State ระบบ AI
+  const [tempImageUrl, setTempImageUrl] = useState<string | null>(null)
+  
   const [status, setStatus] = useState<'idle' | 'scanning' | 'result' | 'training'>('idle')
   const [matchType, setMatchType] = useState<'known' | 'new' | null>(null)
   const [matchedCat, setMatchedCat] = useState<any>(null)
   
-  // 📝 State สำหรับฟอร์ม
   const [newCatName, setNewCatName] = useState('')
   const [description, setDescription] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   
-  // 🔍 State สำหรับระบบ "เลือกแมวเอง" และจัดเรียง
   const [showCatList, setShowCatList] = useState(false)
   const [allCats, setAllCats] = useState<any[]>([])
-  const [userInteractedCatIds, setUserInteractedCatIds] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
 
+  // ลำดับมุมที่ต้องการให้ถ่าย (หลังจากถ่ายหน้าปกแล้ว)
   const trainingAngles = ["หน้าตรง", "ด้านซ้าย", "ด้านขวา"]
 
   useEffect(() => {
@@ -77,41 +75,31 @@ export default function HuntPage() {
 
     startCamera()
     
-    // 🧠 ดึงข้อมูลแมวทั้งหมด พร้อมพิกัดล่าสุดที่เคยเจอ และดึงประวัติว่า User เคยเจอตัวไหนบ้าง
-    const fetchCatsAndHistory = async () => {
-      // 1. ดึงข้อมูลแมว พร้อมพิกัดจาก encounter ล่าสุดเพื่อใช้คำนวณระยะทาง
-      const { data: catsData } = await supabase
-        .from('cats')
-        .select('id, name, area, encounters(lat, lng)')
+    const fetchCatsAndEncounters = async () => {
+      const { data: catsData } = await supabase.from('cats').select('id, name, area')
       
+      const { data: encountersData } = await supabase
+        .from('encounters')
+        .select('cat_id, user_id, lat, lng')
+        .order('created_at', { ascending: false })
+
       if (catsData) {
-        // จัดรูปร่างข้อมูลให้มี lat/lng สำหรับคำนวณ
-        const formattedCats = catsData.map(c => {
-          const latestEnc = Array.isArray(c.encounters) && c.encounters.length > 0 ? c.encounters[c.encounters.length - 1] : null;
+        const catInfo = catsData.map(cat => {
+          const catEncounters = encountersData?.filter(e => e.cat_id === cat.id) || []
+          const userInteracted = catEncounters.some(e => e.user_id === user.id)
+          const latestLoc = catEncounters.find(e => e.lat && e.lng)
+          
           return {
-            id: c.id,
-            name: c.name,
-            area: c.area,
-            lat: latestEnc?.lat || null,
-            lng: latestEnc?.lng || null
+            ...cat,
+            hasInteracted: userInteracted,
+            lat: latestLoc?.lat || null,
+            lng: latestLoc?.lng || null
           }
         })
-        setAllCats(formattedCats)
-      }
-
-      // 2. ดึงประวัติว่า User คนนี้เคยถ่ายรูปแมว ID ไหนไปบ้างแล้ว
-      const { data: userEncounters } = await supabase
-        .from('encounters')
-        .select('cat_id')
-        .eq('user_id', user.id)
-
-      if (userEncounters) {
-        const ids = new Set(userEncounters.map(e => e.cat_id))
-        setUserInteractedCatIds(ids)
+        setAllCats(catInfo)
       }
     }
-
-    fetchCatsAndHistory()
+    fetchCatsAndEncounters()
 
     return () => {
       if (stream) stream.getTracks().forEach(track => track.stop())
@@ -128,10 +116,8 @@ export default function HuntPage() {
     }
   }
 
-  // 📸 กดถ่ายภาพ
   const handleCapture = async (isTrainingStep = false) => {
     if (navigator.vibrate) navigator.vibrate(50)
-    setStatus('scanning')
 
     if (!isTrainingStep && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -160,6 +146,10 @@ export default function HuntPage() {
         ctx.drawImage(video, startX, startY, size, size, 0, 0, 512, 512)
         
         const base64Image = canvas.toDataURL('image/jpeg', 0.8)
+        
+        setTempImageUrl(base64Image)
+        setStatus('scanning')
+        
         const blob = await new Promise<Blob>((resolve) => {
           canvas.toBlob((b) => resolve(b!), 'image/jpeg', 0.8)
         })
@@ -172,6 +162,7 @@ export default function HuntPage() {
           })
           
           const result = await res.json()
+          setTempImageUrl(null)
 
           if (!res.ok || !result.success) {
             alert(result.error || 'วิเคราะห์ไม่ผ่าน ลองถ่ายมุมใหม่นะ 😿')
@@ -183,6 +174,7 @@ export default function HuntPage() {
           const updatedCaptures = [...capturedImages, newCapture]
           setCapturedImages(updatedCaptures)
 
+          // 🌟 เช็คเงื่อนไขจำนวนรูปที่เปลี่ยนไป (ต้องครบ 4 รูปสำหรับแมวใหม่)
           if (!isTrainingStep) {
             if (result.matchType === 'known') {
               setMatchedCat(result.cat)
@@ -193,13 +185,16 @@ export default function HuntPage() {
               setStatus('training') 
             }
           } else {
-            if (updatedCaptures.length >= 3) {
+            // ถ้าโหมดเทรน ถ่ายรูปครบ 4 รูปแล้ว (ปก 1 + สอน 3) ถึงจะไปหน้าถัดไป
+            if (updatedCaptures.length >= 4) {
               setStatus('result')
             } else {
               setStatus('training')
             }
           }
+
         } catch (error) {
+          setTempImageUrl(null)
           alert('ระบบขัดข้อง โปรดลองใหม่')
           setStatus(isTrainingStep ? 'training' : 'idle')
         }
@@ -207,20 +202,14 @@ export default function HuntPage() {
     }
   }
 
-  // 🚀 บันทึกข้อมูล
-  const submitEncounter = async () => {
+ const submitEncounter = async () => {
     if (!user || capturedImages.length === 0) return
     setIsSubmitting(true)
 
     try {
-      const mainImage = capturedImages[0]
-      const fileName = `${user.id}-${Date.now()}.jpg`
-      const { error: uploadError } = await supabase.storage.from('encounters').upload(fileName, mainImage.blob)
-      if (uploadError) throw uploadError
-      const { data: { publicUrl } } = supabase.storage.from('encounters').getPublicUrl(fileName)
-
       let finalCatId = matchedCat?.id
 
+      // 1. จัดการข้อมูลแมว (ถ้าเป็นแมวใหม่)
       if (matchType === 'new') {
         if (!newCatName) {
           alert('กรุณาตั้งชื่อน้องแมวด้วยครับ')
@@ -244,36 +233,51 @@ export default function HuntPage() {
         await supabase.from('cats').update({ last_seen: new Date().toISOString() }).eq('id', finalCatId)
       }
 
-      const finalDescription = description.trim() !== '' 
+      const baseDescription = description.trim() !== '' 
         ? description.trim() 
         : (matchType === 'new' ? `New discovery: ${newCatName}` : `Spotted ${matchedCat?.name}`)
 
-      for (const capture of capturedImages) {
+      // 🌟 2. ลูปอัปโหลด "ทุกรูป" แยกกัน เพื่อให้ได้ URL ของรูปนั้นจริงๆ
+      for (let i = 0; i < capturedImages.length; i++) {
+        const capture = capturedImages[i];
+        
+        // ตั้งชื่อไฟล์ให้ไม่ซ้ำกันด้วย index (i)
+        const fileName = `${user.id}-${Date.now()}-${i}.jpg`
+        const { error: uploadError } = await supabase.storage.from('encounters').upload(fileName, capture.blob)
+        if (uploadError) throw uploadError
+        
+        // ดึง URL ของรูปที่เพิ่งอัปโหลดเสร็จ
+        const { data: { publicUrl } } = supabase.storage.from('encounters').getPublicUrl(fileName)
+
+        // ถ้ารูปไม่ใช่รูปหน้าปก (index > 0) ให้เพิ่มคำอธิบายต่อท้าย จะได้ไม่ดูซ้ำกันในฟีด
+        const finalDescription = i === 0 ? baseDescription : `${baseDescription} (มุมฝึก AI)`
+
         const { error: encError } = await supabase
           .from('encounters')
           .insert({
             cat_id: finalCatId,
             user_id: user.id,
-            image_url: publicUrl,
+            image_url: publicUrl, // 👈 คราวนี้ใช้ URL จริงของแต่ละรูปแล้ว!
             description: finalDescription,
             lat: location?.lat || null,
             lng: location?.lng || null,
-            image_embedding: capture.vector
+            image_embedding: `[${capture.vector.join(',')}]` 
           })
         if (encError) throw encError
       }
 
+      // 3. อัปเดตสถิติผู้ใช้
       const { data: profile } = await supabase.from('profiles').select('cats_found').eq('id', user.id).single()
       await supabase.from('profiles').update({ cats_found: (profile?.cats_found || 0) + 1 }).eq('id', user.id)
 
       router.push('/feed')
+
     } catch (error: any) {
       alert('บันทึกข้อมูลไม่สำเร็จ')
       setIsSubmitting(false)
     }
   }
 
-  // เปลี่ยนเป็นแมวเดิมที่เลือกเอง
   const handleSelectCatManually = (cat: any) => {
     setMatchedCat(cat)
     setMatchType('known')
@@ -281,13 +285,11 @@ export default function HuntPage() {
     setStatus('result')
   }
 
-  // เปลี่ยนเป็นแมวใหม่ทันที (กรณี AI ทายว่าเป็นแมวเดิม แต่ User บอกว่าไม่ใช่)
-  const handleSwitchToNewCat = () => {
-    setMatchedCat(null)
-    setMatchType('new')
+  const handleDeclareAsNew = () => {
     setShowCatList(false)
-    // ถ้าเพิ่งถ่ายไปแค่รูปเดียว ให้เข้าโหมด Training ถ่ายเพิ่มจนครบ 3 รูป
-    if (capturedImages.length < 3) {
+    setMatchType('new')
+    // เปลี่ยนเป้าหมายเป็น 4 รูป
+    if (capturedImages.length < 4) {
       setStatus('training')
     } else {
       setStatus('result')
@@ -296,6 +298,7 @@ export default function HuntPage() {
 
   const resetCamera = () => {
     setCapturedImages([])
+    setTempImageUrl(null)
     setMatchedCat(null)
     setNewCatName('')
     setDescription('')
@@ -304,40 +307,29 @@ export default function HuntPage() {
     setStatus('idle')
   }
 
-  // 🧠 อัลกอริทึมจัดเรียงแมวสุดฉลาด (กรองชื่อ -> แยกกลุ่มเคยเจอ/ไม่เคย -> เรียงระยะทางใกล้สุด)
-  const getSortedCats = () => {
-    const currentLat = location?.lat || 0;
-    const currentLng = location?.lng || 0;
+  const filteredCats = allCats
+    .filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    .map(c => ({
+      ...c,
+      distance: location ? getDistance(location.lat, location.lng, c.lat, c.lng) : Infinity
+    }))
+    .sort((a, b) => {
+      const isMatchA = matchedCat && a.id === matchedCat.id
+      const isMatchB = matchedCat && b.id === matchedCat.id
+      if (isMatchA && !isMatchB) return -1
+      if (!isMatchA && isMatchB) return 1
 
-    return allCats
-      .filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()))
-      .sort((a, b) => {
-        const aInteracted = userInteractedCatIds.has(a.id);
-        const bInteracted = userInteractedCatIds.has(b.id);
-
-        // 1. ถ้าตัวนึงเคยมีส่วนร่วม แต่อีกตัวไม่เคย ให้เอาตัวที่เคยขึ้นก่อนเสมอ
-        if (aInteracted && !bInteracted) return -1;
-        if (!aInteracted && bInteracted) return 1;
-
-        // 2. ถ้าอยู่กลุ่มเดียวกัน (เคยทั้งคู่ หรือ ไม่เคยทั้งคู่) ให้จัดเรียงตามระยะทางใกล้สุดไปไกลสุด
-        if (currentLat && currentLng) {
-          const distA = calculateDistance(currentLat, currentLng, a.lat, a.lng);
-          const distB = calculateDistance(currentLat, currentLng, b.lat, b.lng);
-          return distA - distB;
-        }
-
-        // 3. ถ้าไม่มีพิกัด ให้เรียงตามชื่อ
-        return a.name.localeCompare(b.name);
-      });
-  }
-
-  const sortedCats = getSortedCats()
+      if (a.hasInteracted && !b.hasInteracted) return -1
+      if (!a.hasInteracted && b.hasInteracted) return 1
+      
+      return a.distance - b.distance
+    })
 
   return (
     <main className="relative flex h-full w-full flex-col bg-black text-white overflow-hidden">
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-      {/* Camera View */}
+      {/* Camera View & Frozen Images */}
       {hasCameraError ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 px-6 text-center">
           <p className="text-zinc-400 font-medium text-sm mb-6">Camera access required</p>
@@ -345,10 +337,18 @@ export default function HuntPage() {
         </div>
       ) : (
         <>
-          <video ref={videoRef} autoPlay playsInline muted className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${isCameraReady && (status === 'idle' || status === 'training') ? 'opacity-100' : 'opacity-0'}`} />
-          {capturedImages.length > 0 && status === 'result' && (
+          <video ref={videoRef} autoPlay playsInline muted className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${isCameraReady && !tempImageUrl && status !== 'result' ? 'opacity-100' : 'opacity-0'}`} />
+          
+          {/* ภาพฟรีซชั่วคราว */}
+          {tempImageUrl && (
+            <img src={tempImageUrl} alt="Scanning" className="absolute inset-0 w-full h-full object-cover" />
+          )}
+
+          {/* ภาพหน้าปกตอนเสร็จ (จะโชว์เสมอในหน้า Result) */}
+          {capturedImages.length > 0 && status === 'result' && !tempImageUrl && (
              <img src={capturedImages[0].url} alt="Cover" className="absolute inset-0 w-full h-full object-cover" />
           )}
+          
           <div className="absolute inset-0 bg-black/10 pointer-events-none"></div>
         </>
       )}
@@ -360,23 +360,15 @@ export default function HuntPage() {
         </button>
       </div>
 
-      {/* กรอบเล็ง */}
       <div className="relative z-10 flex-1 flex flex-col items-center justify-center pointer-events-none">
-        {(status === 'idle' || status === 'training') && isCameraReady && (
-          <div className="relative w-64 h-64 flex flex-col items-center justify-center">
-            <div className="absolute inset-0 border-2 border-white/50 border-dashed rounded-3xl animate-pulse"></div>
-            <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-orange-500 rounded-tl-3xl"></div>
-            <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-orange-500 rounded-tr-3xl"></div>
-            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-orange-500 rounded-bl-3xl"></div>
-            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-orange-500 rounded-br-3xl"></div>
-            
-            <div className="absolute -bottom-14 flex flex-col items-center">
-              <span className="text-white font-bold text-xs bg-black/70 px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
-                {status === 'training' 
-                  ? `📸 ถ่ายมุม: ${trainingAngles[capturedImages.length]} (${capturedImages.length}/3)` 
-                  : `📸 เล็งให้แมวอยู่กลางกรอบ`}
-              </span>
-            </div>
+        
+        {/* กรอบเล็งแบบ Minimal (หายไปตอนฟรีซภาพ) */}
+        {(status === 'idle' || status === 'training') && isCameraReady && !tempImageUrl && (
+          <div className="relative w-64 h-64 flex flex-col items-center justify-center opacity-60">
+            <div className="absolute top-0 left-0 w-8 h-8 border-t-[1.5px] border-l-[1.5px] border-white rounded-tl-2xl"></div>
+            <div className="absolute top-0 right-0 w-8 h-8 border-t-[1.5px] border-r-[1.5px] border-white rounded-tr-2xl"></div>
+            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-[1.5px] border-l-[1.5px] border-white rounded-bl-2xl"></div>
+            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-[1.5px] border-r-[1.5px] border-white rounded-br-2xl"></div>
           </div>
         )}
 
@@ -391,13 +383,21 @@ export default function HuntPage() {
       {/* แถบเมนูด้านล่าง */}
       <div className="relative z-10 w-full mt-auto pb-[120px]">
         
-        {/* ปุ่มชัตเตอร์ตอนถ่าย */}
         {(status === 'idle' || status === 'training') && isCameraReady && (
-          <div className="flex flex-col items-center justify-center pb-4 space-y-6">
+          <div className="flex flex-col items-center justify-center pb-4 space-y-4">
+            
+            {status === 'training' && !tempImageUrl && (
+              <div className="bg-black/40 backdrop-blur-md px-5 py-2 rounded-full text-white font-bold text-xs tracking-wider animate-in fade-in zoom-in duration-300">
+                {/* คำนวณคำอธิบายให้ตรงกับ Index ของ Array */}
+                📸 ถ่ายมุม: {trainingAngles[capturedImages.length - 1]} ({capturedImages.length}/3)
+              </div>
+            )}
+
             {status === 'training' && (
               <div className="flex space-x-2">
-                {[0, 1, 2].map(i => (
-                  <div key={i} className={`w-14 h-14 rounded-xl overflow-hidden border-2 ${i < capturedImages.length ? 'border-green-500' : 'border-white/20'}`}>
+                {/* 🌟 ใช้อินเด็กซ์ [1, 2, 3] แทน [0, 1, 2] เพื่อไม่ให้เอารูปหน้าปก (0) มาใส่ในช่อง */}
+                {[1, 2, 3].map(i => (
+                  <div key={i} className={`w-14 h-14 rounded-xl overflow-hidden border-2 transition-colors ${i < capturedImages.length ? 'border-white' : 'border-white/20'}`}>
                     {i < capturedImages.length ? (
                       <img src={capturedImages[i].url} className="w-full h-full object-cover" />
                     ) : (
@@ -408,58 +408,60 @@ export default function HuntPage() {
               </div>
             )}
 
-            <button onClick={() => handleCapture(status === 'training')} className="w-20 h-20 rounded-full border-[3px] border-white/50 flex items-center justify-center active:scale-95 p-1.5 group">
+            <button onClick={() => handleCapture(status === 'training')} className="w-20 h-20 rounded-full border-[3px] border-white/50 flex items-center justify-center active:scale-95 p-1.5 group mt-2">
               <div className="w-full h-full rounded-full bg-white group-active:bg-zinc-200"></div>
             </button>
             
             {status === 'training' && (
-               <button onClick={() => setShowCatList(true)} className="text-sm font-bold text-white underline underline-offset-4">
+               <button onClick={() => setShowCatList(true)} className="text-sm font-bold text-white underline underline-offset-4 pt-2 shadow-sm drop-shadow-md">
                  ฉันรู้จักแมวตัวนี้อยู่แล้ว (ข้ามการฝึก)
                </button>
             )}
           </div>
         )}
 
-        {/* Modal: เลือกแมวเอง พร้อมระบบ Sort */}
+        {/* Modal: เลือกแมวเอง */}
         {showCatList && (
            <div className="absolute bottom-0 left-0 w-full h-[75vh] bg-white rounded-t-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom z-50 text-zinc-900 flex flex-col">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="font-black text-xl">เลือกน้องแมวที่พบ</h3>
+                <h3 className="font-black text-xl">เลือกรายชื่อแมว</h3>
                 <button onClick={() => setShowCatList(false)}><X className="w-6 h-6 text-zinc-400"/></button>
               </div>
-              <div className="relative mb-3">
-                <Search className="absolute left-3 top-3.5 w-5 h-5 text-zinc-400" />
+              
+              <div className="relative mb-4">
+                <Search className="absolute left-3 top-3 w-5 h-5 text-zinc-400" />
                 <input 
                   type="text" 
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="ค้นหาชื่อน้องแมว..." 
+                  placeholder="ค้นหาชื่อแมว..." 
                   className="w-full bg-zinc-100 rounded-xl h-12 pl-10 pr-4 outline-none font-bold text-zinc-700 focus:ring-2 focus:ring-orange-500"
                 />
               </div>
-              
-              <button onClick={handleSwitchToNewCat} className="w-full mb-3 py-3 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-xl flex items-center justify-center space-x-2 text-orange-600 font-bold active:scale-[0.98] transition-transform">
-                <Plus className="w-5 h-5" />
-                <span>+ ลงทะเบียนเป็นแมวตัวใหม่เอี่ยม</span>
-              </button>
 
               <div className="flex-1 overflow-y-auto space-y-2 pb-10">
-                {sortedCats.map(cat => {
-                  const isInteracted = userInteractedCatIds.has(cat.id);
-                  const dist = (location?.lat && cat.lat) 
-                    ? `${calculateDistance(location.lat, location.lng, cat.lat, cat.lng).toFixed(1)} km` 
-                    : null;
+                <button onClick={handleDeclareAsNew} className="w-full text-left p-4 bg-orange-50 hover:bg-orange-100 rounded-xl flex justify-between items-center mb-4 border border-orange-200 transition-colors">
+                  <div className="flex items-center space-x-2 text-orange-600">
+                    <Plus className="w-5 h-5" />
+                    <span className="font-bold">เพิ่มเป็นแมวตัวใหม่ (New Discovery)</span>
+                  </div>
+                </button>
 
+                {filteredCats.map(cat => {
+                  const isAIMatch = matchedCat && cat.id === matchedCat.id
                   return (
-                    <button key={cat.id} onClick={() => handleSelectCatManually(cat)} className={`w-full text-left p-4 rounded-xl flex justify-between items-center transition-colors ${isInteracted ? 'bg-orange-50/60 border border-orange-200/60 hover:bg-orange-100' : 'bg-zinc-50 hover:bg-zinc-100'}`}>
+                    <button key={cat.id} onClick={() => handleSelectCatManually(cat)} className={`w-full text-left p-4 rounded-xl flex justify-between items-center transition-colors ${isAIMatch ? 'bg-blue-50 border border-blue-200 hover:bg-blue-100' : 'bg-zinc-50 hover:bg-zinc-100'}`}>
                       <div>
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                           <span className="font-bold text-zinc-900">{cat.name}</span>
-                          {isInteracted && <span className="bg-orange-500 text-white text-[9px] px-1.5 py-0.5 rounded-md font-bold flex items-center"><UserCheck className="w-2.5 h-2.5 mr-0.5"/> เคยถ่ายแล้ว</span>}
+                          {isAIMatch && <span className="text-[9px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">🎯 AI แนะนำ</span>}
+                          {cat.hasInteracted && !isAIMatch && <span className="text-[9px] bg-green-100 text-green-600 px-2 py-0.5 rounded-full font-bold">⭐ เคยเจอแล้ว</span>}
                         </div>
-                        <span className="text-xs text-zinc-400 mt-0.5 block">{cat.area}</span>
+                        <span className="text-xs text-zinc-400 flex items-center mt-1">
+                          {cat.area} 
+                          {cat.distance !== Infinity && ` • ห่าง ${cat.distance < 1 ? (cat.distance * 1000).toFixed(0) + ' ม.' : cat.distance.toFixed(1) + ' กม.'}`}
+                        </span>
                       </div>
-                      {dist && <span className="text-xs font-bold text-zinc-500 bg-zinc-200/60 px-2 py-1 rounded-lg">{dist}</span>}
                     </button>
                   )
                 })}
@@ -502,18 +504,15 @@ export default function HuntPage() {
                     <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="น้องแมวกำลังทำอะไร? (Optional)" className="w-full bg-zinc-50 rounded-[1.2rem] h-14 px-5 text-base font-bold outline-none" />
                   </div>
 
-                  <div className="flex flex-col space-y-2.5">
-                    <button onClick={submitEncounter} disabled={isSubmitting} className="w-full bg-zinc-900 text-white h-14 rounded-[1.2rem] font-bold flex justify-center items-center active:scale-[0.98] transition-transform">
+                  <div className="flex flex-col space-y-3">
+                    <button onClick={submitEncounter} disabled={isSubmitting} className="w-full bg-zinc-900 text-white h-14 rounded-[1.2rem] font-bold flex justify-center items-center">
                       {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Confirm Sighting'}
                     </button>
-                    <button onClick={() => setShowCatList(true)} disabled={isSubmitting} className="w-full bg-zinc-100 text-zinc-700 h-12 rounded-[1.2rem] font-bold text-sm active:scale-[0.98] transition-transform">
-                      ไม่ใช่ตัวนี้ (เลือกแมวเอง)
+                    <button onClick={() => setShowCatList(true)} disabled={isSubmitting} className="w-full bg-zinc-100 text-zinc-600 h-14 rounded-[1.2rem] font-bold">
+                      ไม่ใช่ตัวนี้ (เลือกเอง / แมวใหม่)
                     </button>
-                    <button onClick={handleSwitchToNewCat} disabled={isSubmitting} className="w-full bg-orange-50 text-orange-600 h-12 rounded-[1.2rem] font-bold text-sm active:scale-[0.98] transition-transform">
-                      + นี่คือแมวตัวใหม่ (ยังไม่มีในระบบ)
-                    </button>
-                    <button onClick={resetCamera} disabled={isSubmitting} className="w-full text-zinc-400 h-8 text-xs font-bold underline">
-                      ถ่ายใหม่ทั้งหมด
+                    <button onClick={resetCamera} disabled={isSubmitting} className="w-full text-zinc-400 h-10 font-bold underline">
+                      ถ่ายใหม่
                     </button>
                   </div>
                 </>
@@ -529,14 +528,14 @@ export default function HuntPage() {
                     <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="รายละเอียดเพิ่มเติม (Optional)" className="w-full bg-zinc-50 rounded-[1.2rem] h-14 px-5 font-bold outline-none" />
                   </div>
 
-                  <div className="flex flex-col space-y-2.5">
-                    <button onClick={submitEncounter} disabled={isSubmitting || !newCatName} className="w-full bg-orange-500 text-white h-14 rounded-[1.2rem] font-bold flex justify-center items-center disabled:opacity-50 active:scale-[0.98] transition-transform">
-                      {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : 'ลงทะเบียนแมวใหม่'}
+                  <div className="flex flex-col space-y-3">
+                    <button onClick={submitEncounter} disabled={isSubmitting || !newCatName} className="w-full bg-orange-500 text-white h-14 rounded-[1.2rem] font-bold flex justify-center items-center disabled:opacity-50">
+                      {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : 'ลงทะเบียนแมวใหม่ (เก็บ 3 มุม)'}
                     </button>
-                    <button onClick={() => setShowCatList(true)} disabled={isSubmitting} className="w-full bg-zinc-100 text-zinc-700 h-12 rounded-[1.2rem] font-bold text-sm active:scale-[0.98] transition-transform">
-                      ค้าน AI: ฉันรู้จักแมวตัวนี้อยู่แล้ว
+                    <button onClick={() => setShowCatList(true)} disabled={isSubmitting} className="w-full bg-zinc-100 text-zinc-600 h-14 rounded-[1.2rem] font-bold">
+                      ฉันรู้จักแมวตัวนี้อยู่แล้ว
                     </button>
-                    <button onClick={resetCamera} disabled={isSubmitting} className="w-full text-zinc-400 h-8 text-xs font-bold underline">
+                    <button onClick={resetCamera} disabled={isSubmitting} className="w-full text-zinc-400 h-10 font-bold underline">
                       ยกเลิก
                     </button>
                   </div>

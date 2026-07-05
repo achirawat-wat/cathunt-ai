@@ -140,7 +140,7 @@ export default function FeedCard({ feed }: FeedCardProps) {
       .select('id')
       .eq('cat_id', feed.cat.id)
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
     
     if (data) setIsFollowing(true)
   }
