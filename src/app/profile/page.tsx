@@ -35,6 +35,11 @@ export default function ProfilePage() {
   const [myPosts, setMyPosts] = useState<any[]>([])
   const [stats, setStats] = useState({ discovered: 0, total: 0 })
   const [isFetchingPosts, setIsFetchingPosts] = useState(true)
+
+  // ❤️ Liked posts (ไม่จำกัดว่าต้องเป็นรูปที่เราถ่ายเอง) — โหลดแบบ lazy ตอนกดแท็บครั้งแรก
+  const [likedPosts, setLikedPosts] = useState<any[]>([])
+  const [isFetchingLikes, setIsFetchingLikes] = useState(false)
+  const [likesLoaded, setLikesLoaded] = useState(false)
   
   const [avatarError, setAvatarError] = useState(false)
   // 📸 State and ref for the avatar upload flow
@@ -54,6 +59,14 @@ export default function ProfilePage() {
     fetchUserPosts(user.id)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user])
+
+  // ❤️ โหลด liked posts เมื่อกดแท็บ "Likes" ครั้งแรกเท่านั้น
+  useEffect(() => {
+    if (activeTab === 'favorites' && !likesLoaded && user) {
+      fetchLikedPosts(user.id)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, user])
 
   const fetchUserPosts = async (userId: string) => {
     try {
@@ -98,6 +111,56 @@ export default function ProfilePage() {
       console.error('Error fetching posts:', err)
     } finally {
       setIsFetchingPosts(false)
+    }
+  }
+
+  // ❤️ ดึงโพสต์ (encounter) ทั้งหมดที่ผู้ใช้เคยกดไลก์ไว้ ไม่จำกัดว่าใครเป็นคนถ่าย
+  const fetchLikedPosts = async (userId: string) => {
+    try {
+      setIsFetchingLikes(true)
+      const { data, error } = await supabase
+        .from('likes')
+        .select(`
+          created_at,
+          encounters (
+            id,
+            image_url,
+            created_at,
+            likes_count,
+            is_training,
+            cats ( id, name )
+          )
+        `)
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      if (data) {
+        const formattedLikes = data
+          .map((row: any) => {
+            const enc = Array.isArray(row.encounters) ? row.encounters[0] : row.encounters
+            if (!enc || enc.is_training) return null // กันโพสต์ training data หลุดมา
+
+            const catInfo = Array.isArray(enc.cats) ? enc.cats[0] : enc.cats
+            return {
+              id: enc.id,
+              title: catInfo?.name || 'Unknown Cat',
+              catId: catInfo?.id,
+              time: timeAgo(enc.created_at),
+              img: enc.image_url,
+              likes: enc.likes_count || 0
+            }
+          })
+          .filter(Boolean)
+
+        setLikedPosts(formattedLikes as any[])
+      }
+    } catch (err) {
+      console.error('Error fetching liked posts:', err)
+    } finally {
+      setIsFetchingLikes(false)
+      setLikesLoaded(true)
     }
   }
 
@@ -228,11 +291,11 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
     level: `Explorer Level ${currentLevel}`
   }
 
-  const displayPosts = activeTab === 'posts' 
-    ? myPosts 
-    : myPosts.filter(post => post.likes > 0)
-    
+  // ❤️ ใช้ likedPosts ตรงๆ แทนการ filter จาก myPosts
+  const displayPosts = activeTab === 'posts' ? myPosts : likedPosts
+
   const isPageLoading = authLoading || isFetchingPosts
+  const isTabLoading = activeTab === 'posts' ? isPageLoading : (isPageLoading || isFetchingLikes)
   const showRealAvatar = displayProfile.avatar && !avatarError && !displayProfile.avatar.includes('unsplash.com/photo-1599566')
 
   return (
@@ -358,16 +421,18 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
             </button>
           </div>
 
-          {isPageLoading ? (
+          {isTabLoading ? (
             <div className="flex justify-center items-center h-32">
               <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4 pt-2">
-              <Link href="/hunt" className="bg-zinc-50 rounded-[1.5rem] overflow-hidden border-2 border-dashed border-zinc-200 flex flex-col items-center justify-center aspect-[4/5] cursor-pointer active:scale-95 transition-all hover:bg-zinc-100 dark:bg-zinc-900/50 dark:border-zinc-800 dark:hover:bg-zinc-800">
-                <Camera className="h-8 w-8 text-zinc-300 dark:text-zinc-600 mb-2" />
-                <p className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">New Post</p>
-              </Link>
+              {activeTab === 'posts' && (
+                <Link href="/hunt" className="bg-zinc-50 rounded-[1.5rem] overflow-hidden border-2 border-dashed border-zinc-200 flex flex-col items-center justify-center aspect-[4/5] cursor-pointer active:scale-95 transition-all hover:bg-zinc-100 dark:bg-zinc-900/50 dark:border-zinc-800 dark:hover:bg-zinc-800">
+                  <Camera className="h-8 w-8 text-zinc-300 dark:text-zinc-600 mb-2" />
+                  <p className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">New Post</p>
+                </Link>
+              )}
 
               {displayPosts.map((post) => (
                 <Link href={`/cats/${post.catId}`} key={post.id} className="bg-white rounded-[1.5rem] overflow-hidden shadow-sm border border-zinc-100 group cursor-pointer active:scale-95 transition-all block dark:bg-zinc-900 dark:border-zinc-800">
@@ -392,8 +457,10 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
               ))}
 
               {displayPosts.length === 0 && (
-                <div className="flex flex-col items-center justify-center aspect-[4/5] text-center px-4">
-                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">No posts here yet.</p>
+                <div className={`flex flex-col items-center justify-center aspect-[4/5] text-center px-4 ${activeTab === 'posts' ? '' : 'col-span-2'}`}>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                    {activeTab === 'posts' ? 'No posts here yet.' : 'No liked cats yet. Go find some! 🐾'}
+                  </p>
                 </div>
               )}
             </div>
