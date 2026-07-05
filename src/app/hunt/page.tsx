@@ -92,22 +92,32 @@ export default function HuntPage() {
       )
     }
 
-    // 2. แคปภาพและประมวลผล
+    // 2. แคปภาพและประมวลผล (อัปเดต Center Crop)
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current
       const canvas = canvasRef.current
-      
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      
       const ctx = canvas.getContext('2d')
+      
       if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        // หาความยาวของด้านที่สั้นที่สุด เพื่อทำเป็น "กรอบสี่เหลี่ยมจัตุรัส"
+        const size = Math.min(video.videoWidth, video.videoHeight)
+        
+        // คำนวณหาจุดกึ่งกลาง (ตัดขอบซ้าย-ขวา หรือ บน-ล่าง ที่เกินมาทิ้งไป)
+        const startX = (video.videoWidth - size) / 2
+        const startY = (video.videoHeight - size) / 2
+
+        // ตั้งขนาดรูปที่จะส่งให้ AI (512x512)
+        canvas.width = 512
+        canvas.height = 512
+        
+        // วาดเฉพาะ "พื้นที่กึ่งกลาง" ลงใน Canvas
+        ctx.drawImage(video, startX, startY, size, size, 0, 0, 512, 512)
         
         // แปลงภาพเป็น Base64
         const base64Image = canvas.toDataURL('image/jpeg', 0.8)
         setCapturedUrl(base64Image)
         
+        // สร้าง Blob สำหรับอัปโหลดขึ้น Storage
         canvas.toBlob((blob) => {
           if (blob) setCapturedBlob(blob)
         }, 'image/jpeg', 0.8)
@@ -192,10 +202,9 @@ export default function HuntPage() {
         if (catError) throw catError
         finalCatId = newCat.id
       } else {
-        // อัปเดตเวลาเจอล่าสุด และอาจจะอัปเดต Vector ให้แม่นขึ้น (ตัวเลือก)
+        // อัปเดตเวลาเจอล่าสุด
         await supabase.from('cats').update({ 
           last_seen: new Date().toISOString(),
-          // image_embedding: catEmbedding // 👈 ถ้าอยากให้ AI ฉลาดขึ้นเรื่อยๆ เปิดคอมเมนต์ตรงนี้ได้
         }).eq('id', finalCatId)
       }
 
