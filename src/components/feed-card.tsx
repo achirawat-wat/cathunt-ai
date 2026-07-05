@@ -2,7 +2,8 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Heart, MessageCircle, MoreHorizontal, Check, Plus, MapPin, Send, Share2, Loader2 } from 'lucide-react'
+import Link from 'next/link'
+import { Heart, MessageCircle, Check, Plus, MapPin, Send, Share2, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 
@@ -11,11 +12,17 @@ function timeAgo(dateString: string) {
   const date = new Date(dateString)
   const now = new Date()
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
-  
+
   if (diffInSeconds < 60) return `Just now`
   if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`
   if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`
   return `${Math.floor(diffInSeconds / 86400)}d ago`
+}
+
+// 🔢 ฟอร์แมตตัวเลขแบบ social app: 1200 -> 1.2k
+function formatCount(num: number) {
+  if (!num || num < 1000) return String(num || 0)
+  return new Intl.NumberFormat('en', { notation: 'compact' }).format(num)
 }
 
 interface FeedCardProps {
@@ -36,10 +43,11 @@ export default function FeedCard({ feed }: FeedCardProps) {
   // 🎯 States
   const [isLiked, setIsLiked] = useState(false)
   const [likesCount, setLikesCount] = useState(feed.likes || 0)
-  
+  const [isLiking, setIsLiking] = useState(false) // 👈 กันสแปมกดไลก์ถี่ๆ
+
   const [isFollowing, setIsFollowing] = useState(false)
   const [showHeartOverlay, setShowHeartOverlay] = useState(false)
-  
+
   // 📝 Comments State
   const [showComments, setShowComments] = useState(false)
   const [commentText, setCommentText] = useState('')
@@ -47,39 +55,42 @@ export default function FeedCard({ feed }: FeedCardProps) {
   const [isLoadingComments, setIsLoadingComments] = useState(false)
   const [totalComments, setTotalComments] = useState(0)
 
+  const [toastMsg, setToastMsg] = useState<string | null>(null)
+
   const lastTapRef = useRef<number>(0)
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // 🔍 1. เช็คสถานะตอนโหลดการ์ดขึ้นมา (ว่าเคยไลก์หรือยัง)
   useEffect(() => {
     if (!user) return
+    let ignore = false // 👈 กัน setState หลัง component unmount ไปแล้ว
 
     const fetchInitialData = async () => {
-      // เช็ค Like
       const { data: likeData } = await supabase
         .from('likes')
         .select('id')
         .eq('encounter_id', feed.id)
         .eq('user_id', user.id)
         .maybeSingle()
-      
-      if (likeData) setIsLiked(true)
 
-      // เช็คจำนวนคอมเมนต์คร่าวๆ
+      if (!ignore && likeData) setIsLiked(true)
+
       const { count } = await supabase
         .from('comments')
         .select('*', { count: 'exact', head: true })
         .eq('encounter_id', feed.id)
-      
-      setTotalComments(count || 0)
+
+      if (!ignore) setTotalComments(count || 0)
     }
 
     fetchInitialData()
+    return () => { ignore = true }
   }, [feed.id, user])
 
   // 💬 2. ดึงข้อมูลคอมเมนต์ทั้งหมด "เมื่อกดเปิดดู" เท่านั้น (ประหยัดเน็ต)
   useEffect(() => {
     if (!showComments) return
+    let ignore = false
 
     const fetchComments = async () => {
       setIsLoadingComments(true)
@@ -94,21 +105,23 @@ export default function FeedCard({ feed }: FeedCardProps) {
         .eq('encounter_id', feed.id)
         .order('created_at', { ascending: true })
 
-      if (!error && data) {
-        setComments(data)
+      if (!ignore) {
+        if (!error && data) setComments(data)
+        setIsLoadingComments(false)
       }
-      setIsLoadingComments(false)
     }
 
     fetchComments()
+    return () => { ignore = true }
   }, [showComments, feed.id])
-  
+
   // 💖 ฟังก์ชันกดไลก์ (ทำงานจริงกับ DB)
   const handleLike = async () => {
-    if (!user) return
+    if (!user || isLiking) return // 👈 กันกดซ้ำระหว่างที่ request ก่อนหน้ายังไม่เสร็จ
+    setIsLiking(true)
 
     const currentlyLiked = isLiked
-    
+
     // อัปเดต UI ทันทีให้ดูลื่นไหล (Optimistic UI)
     setIsLiked(!currentlyLiked)
     setLikesCount(prev => currentlyLiked ? prev - 1 : prev + 1)
@@ -129,47 +142,53 @@ export default function FeedCard({ feed }: FeedCardProps) {
       // ถ้าพัง ให้ Rollback UI กลับ
       setIsLiked(currentlyLiked)
       setLikesCount(prev => currentlyLiked ? prev + 1 : prev - 1)
+    } finally {
+      setIsLiking(false)
     }
   }
-  useEffect(() => {
-  if (!user) return
 
-  const checkFollowStatus = async () => {
-    const { data } = await supabase
-      .from('follows')
-      .select('id')
-      .eq('cat_id', feed.cat.id)
-      .eq('user_id', user.id)
-      .maybeSingle()
-    
-    if (data) setIsFollowing(true)
-  }
-  checkFollowStatus()
-}, [feed.cat.id, user])
+  useEffect(() => {
+    if (!user) return
+    let ignore = false
+
+    const checkFollowStatus = async () => {
+      const { data } = await supabase
+        .from('follows')
+        .select('id')
+        .eq('cat_id', feed.cat.id)
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (!ignore && data) setIsFollowing(true)
+    }
+    checkFollowStatus()
+    return () => { ignore = true }
+  }, [feed.cat.id, user])
 
   const handleFollow = async () => {
-  if (!user) return
-  setIsSubmitting(true);
-  const currentlyFollowing = isFollowing
-  setIsFollowing(!currentlyFollowing) // Optimistic UI
+    if (!user || isSubmitting) return // 👈 กันกดซ้ำระหว่างรอ
+    setIsSubmitting(true)
+    const currentlyFollowing = isFollowing
+    setIsFollowing(!currentlyFollowing) // Optimistic UI
 
-  try {
-    if (currentlyFollowing) {
-      // Unfollow
-      await supabase.from('follows').delete().eq('cat_id', feed.cat.id).eq('user_id', user.id)
-      await supabase.from('cats').update({ followers_count: Math.max(0, (feed.likes || 0) - 1) }).eq('id', feed.cat.id) // สมมติว่าแมวมี followers_count
-    } else {
-      // Follow
-      await supabase.from('follows').insert({ cat_id: feed.cat.id, user_id: user.id })
-      await supabase.from('cats').update({ followers_count: (feed.likes || 0) + 1 }).eq('id', feed.cat.id)
+    try {
+      if (currentlyFollowing) {
+        // Unfollow
+        await supabase.from('follows').delete().eq('cat_id', feed.cat.id).eq('user_id', user.id)
+        await supabase.from('cats').update({ followers_count: Math.max(0, (feed.likes || 0) - 1) }).eq('id', feed.cat.id) // สมมติว่าแมวมี followers_count
+      } else {
+        // Follow
+        await supabase.from('follows').insert({ cat_id: feed.cat.id, user_id: user.id })
+        await supabase.from('cats').update({ followers_count: (feed.likes || 0) + 1 }).eq('id', feed.cat.id)
+      }
+    } catch (err) {
+      console.error('Follow error:', err)
+      setIsFollowing(currentlyFollowing)
+    } finally {
+      setIsSubmitting(false)
     }
-  } catch (err) {
-    console.error('Follow error:', err);
-    setIsFollowing(currentlyFollowing);
-  } finally {
-    setIsSubmitting(false); // 👈 ปิดสถานะ
   }
-}
+
   // 💥 ฟังก์ชัน Double Tap บนรูป
   const handleImageTap = () => {
     const now = Date.now()
@@ -219,31 +238,41 @@ export default function FeedCard({ feed }: FeedCardProps) {
     }
   }
 
-  // 📲 ฟังก์ชัน Share
+  // 🍞 Toast
+  const showToast = (msg: string) => {
+    setToastMsg(msg)
+    setTimeout(() => setToastMsg(null), 2000)
+  }
+
+  // 📋 ปุ่มแชร์ = คัดลอกลิงก์ไปหน้าโปรไฟล์แมวตัวนี้
   const handleShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `CatHunt - ${feed.cat.name}`,
-          text: `Check out ${feed.cat.name} spotted at ${feed.cat.area} by ${feed.user.name}! 🐱`,
-          url: window.location.href,
-        })
-      } catch (error) {
-        console.log('Share canceled')
-      }
+    const catUrl = `https://cathunt-ai.vercel.app/cats/${feed.cat.id}`
+    try {
+      await navigator.clipboard.writeText(catUrl)
+      showToast('Link copied! 🔗')
+    } catch (err) {
+      console.error('Copy link failed:', err)
+      showToast('Copy failed')
     }
   }
 
   return (
-    <article className="bg-white rounded-[2rem] shadow-sm border border-zinc-100 overflow-hidden dark:bg-zinc-900 dark:border-zinc-800 transition-all hover:shadow-md mb-6">
-      
+    <article className="bg-white rounded-[2rem] shadow-sm border border-zinc-100 overflow-hidden dark:bg-zinc-900 dark:border-zinc-800 transition-all hover:shadow-md mb-6 relative">
+
+      {/* 🍞 Toast */}
+      {toastMsg && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 bg-zinc-900 text-white text-[11px] font-bold px-4 py-2 rounded-full shadow-lg animate-in fade-in slide-in-from-top-2 dark:bg-white dark:text-zinc-900">
+          {toastMsg}
+        </div>
+      )}
+
       {/* 👤 Card Header */}
       <div className="flex justify-between items-center p-4">
         <div className="flex items-center space-x-3">
           <div className="relative">
-            <img 
-              src={feed.user.avatar} 
-              alt={feed.user.name} 
+            <img
+              src={feed.user.avatar}
+              alt={feed.user.name}
               className="w-11 h-11 rounded-[1.2rem] object-cover bg-zinc-100 dark:bg-zinc-800 shadow-sm border border-zinc-100 dark:border-zinc-700"
             />
           </div>
@@ -251,7 +280,13 @@ export default function FeedCard({ feed }: FeedCardProps) {
             <p className="text-[13px] text-zinc-900 dark:text-zinc-100 leading-tight">
               <span className="font-black text-sm tracking-tight">{feed.user.name}</span>
               <span className="text-zinc-400 mx-1 font-medium">found</span>
-              <span className="font-black text-orange-500">{feed.cat.name}</span>
+              {/* 🐱 ชื่อแมว -> คลิกไปหน้าโปรไฟล์แมว */}
+              <Link
+                href={`/cats/${feed.cat.id}`}
+                className="font-black text-orange-500 hover:underline active:opacity-70 transition-opacity"
+              >
+                {feed.cat.name}
+              </Link>
             </p>
             <div className="flex items-center text-[10px] font-bold tracking-widest text-zinc-400 mt-1 uppercase">
               <span>{feed.time}</span>
@@ -261,14 +296,18 @@ export default function FeedCard({ feed }: FeedCardProps) {
             </div>
           </div>
         </div>
-        
-        <button onClick={handleShare} className="text-zinc-400 hover:text-zinc-900 bg-zinc-50 hover:bg-zinc-100 transition-all active:scale-95 p-2.5 rounded-full dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:hover:text-zinc-100">
+
+        <button
+          onClick={handleShare}
+          aria-label="Copy link to this cat"
+          className="text-zinc-400 hover:text-zinc-900 bg-zinc-50 hover:bg-zinc-100 transition-all active:scale-95 p-2.5 rounded-full dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
+        >
           <Share2 className="h-4 w-4" />
         </button>
       </div>
 
       {/* 🖼️ Card Image */}
-      <div 
+      <div
         className="w-full aspect-square md:aspect-[4/3] bg-zinc-100 relative overflow-hidden dark:bg-zinc-800 cursor-pointer select-none group"
         onClick={handleImageTap}
       >
@@ -283,43 +322,53 @@ export default function FeedCard({ feed }: FeedCardProps) {
       {/* ⚡ Card Actions */}
       <div className="p-4 flex justify-between items-center">
         <div className="flex space-x-1">
-          <button onClick={handleLike} className="flex items-center space-x-2 active:scale-90 transition-transform group hover:bg-zinc-50 dark:hover:bg-zinc-800 p-2 rounded-[1rem]">
+          <button
+            onClick={handleLike}
+            disabled={isLiking}
+            aria-label={isLiked ? 'Unlike' : 'Like'}
+            className="flex items-center space-x-2 active:scale-90 transition-transform group hover:bg-zinc-50 dark:hover:bg-zinc-800 p-2 rounded-[1rem] disabled:opacity-70"
+          >
             <Heart className={`h-6 w-6 transition-colors ${isLiked ? 'fill-red-500 text-red-500' : 'text-zinc-700 dark:text-zinc-300'}`} />
-            <span className={`font-black text-sm ${isLiked ? 'text-red-500' : 'text-zinc-700 dark:text-zinc-300'}`}>{likesCount}</span>
+            <span className={`font-black text-sm ${isLiked ? 'text-red-500' : 'text-zinc-700 dark:text-zinc-300'}`}>{formatCount(likesCount)}</span>
           </button>
-          
-          <button onClick={() => setShowComments(!showComments)} className={`flex items-center space-x-2 active:scale-90 transition-transform p-2 rounded-[1rem] ${showComments ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>
+
+          <button
+            onClick={() => setShowComments(!showComments)}
+            aria-label="Toggle comments"
+            className={`flex items-center space-x-2 active:scale-90 transition-transform p-2 rounded-[1rem] ${showComments ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}
+          >
             <MessageCircle className="h-6 w-6 text-zinc-700 dark:text-zinc-300" />
-            <span className="font-black text-sm text-zinc-700 dark:text-zinc-300">{totalComments}</span>
+            <span className="font-black text-sm text-zinc-700 dark:text-zinc-300">{formatCount(totalComments)}</span>
           </button>
         </div>
 
-        {/* Follow Button (UI Mockup) */}
-<button 
-  onClick={handleFollow}
-  disabled={isSubmitting} // 👈 เพิ่มสถานะปิดการกดตอนกำลังบันทึก
-  className={`flex items-center space-x-1 px-4 py-2.5 rounded-[1rem] active:scale-95 transition-all font-black text-[10px] tracking-widest uppercase shadow-sm ${
-    isFollowing 
-      ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-zinc-900/20' 
-      : 'bg-orange-50 text-orange-600 border border-orange-100 dark:bg-orange-500/10 dark:border-orange-500/20 dark:text-orange-500'
-  } ${isSubmitting ? 'opacity-50 cursor-wait' : ''}`}
->
-  {isFollowing ? (
-    <Check className="h-3 w-3 mr-1" />
-  ) : (
-    <Plus className="h-3 w-3 mr-1" />
-  )}
-  <span>{isFollowing ? 'Following' : 'Follow'}</span>
-</button>
+        {/* Follow Button */}
+        <button
+          onClick={handleFollow}
+          disabled={isSubmitting}
+          aria-label={isFollowing ? 'Unfollow this cat' : 'Follow this cat'}
+          className={`flex items-center space-x-1 px-4 py-2.5 rounded-[1rem] active:scale-95 transition-all font-black text-[10px] tracking-widest uppercase shadow-sm ${
+            isFollowing
+              ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-zinc-900/20'
+              : 'bg-orange-50 text-orange-600 border border-orange-100 dark:bg-orange-500/10 dark:border-orange-500/20 dark:text-orange-500'
+          } ${isSubmitting ? 'opacity-50 cursor-wait' : ''}`}
+        >
+          {isFollowing ? (
+            <Check className="h-3 w-3 mr-1" />
+          ) : (
+            <Plus className="h-3 w-3 mr-1" />
+          )}
+          <span>{isFollowing ? 'Following' : 'Follow'}</span>
+        </button>
       </div>
 
       {/* 📝 Caption */}
       {feed.content && (
         <div className="px-5 pb-3">
-           <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 leading-relaxed">
-             <span className="font-black text-zinc-900 dark:text-white mr-2">{feed.user.name}</span>
-             {feed.content}
-           </p>
+          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 leading-relaxed">
+            <span className="font-black text-zinc-900 dark:text-white mr-2">{feed.user.name}</span>
+            {feed.content}
+          </p>
         </div>
       )}
 
@@ -327,7 +376,7 @@ export default function FeedCard({ feed }: FeedCardProps) {
       {showComments && (
         <div className="px-5 pb-5 pt-2 animate-in slide-in-from-top-4 fade-in duration-300">
           <div className="border-t border-zinc-100 dark:border-zinc-800 pt-4 mb-4 space-y-4 max-h-[250px] overflow-y-auto no-scrollbar">
-            
+
             {isLoadingComments ? (
               <div className="flex justify-center py-4">
                 <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
@@ -337,9 +386,9 @@ export default function FeedCard({ feed }: FeedCardProps) {
             ) : (
               comments.map((comment) => (
                 <div key={comment.id} className="flex space-x-3 items-start animate-in fade-in slide-in-from-bottom-2">
-                  <img 
-                    src={comment.profiles?.avatar_url || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?q=80&w=150'} 
-                    alt="avatar" 
+                  <img
+                    src={comment.profiles?.avatar_url || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?q=80&w=150'}
+                    alt="avatar"
                     className="w-7 h-7 rounded-full object-cover bg-zinc-100 mt-0.5"
                   />
                   <div className="flex-1 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl rounded-tl-sm px-4 py-2.5">
@@ -353,25 +402,26 @@ export default function FeedCard({ feed }: FeedCardProps) {
               ))
             )}
           </div>
-          
+
           {/* ✏️ Comment Input box with Avatar */}
           <form onSubmit={submitComment} className="flex items-center space-x-3 mt-2">
-            <img 
-              src={globalProfile?.avatar_url || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?q=80&w=150'} 
-              alt="You" 
+            <img
+              src={globalProfile?.avatar_url || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?q=80&w=150'}
+              alt="You"
               className="w-8 h-8 rounded-full object-cover bg-zinc-200"
             />
             <div className="relative flex-1">
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={commentText}
                 onChange={(e) => setCommentText(e.target.value)}
                 placeholder="Add a comment..."
                 className="w-full bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-full h-11 pl-4 pr-12 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-zinc-900 dark:text-white placeholder:text-zinc-400"
               />
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 disabled={!commentText.trim()}
+                aria-label="Send comment"
                 className="absolute right-1 top-1 w-9 h-9 flex items-center justify-center bg-orange-500 text-white rounded-full active:scale-90 transition-transform disabled:opacity-0 disabled:scale-50"
               >
                 <Send className="h-4 w-4 ml-0.5" />
@@ -380,7 +430,7 @@ export default function FeedCard({ feed }: FeedCardProps) {
           </form>
         </div>
       )}
-      
+
     </article>
   )
 }

@@ -207,9 +207,15 @@ export default function HuntPage() {
     setIsSubmitting(true)
 
     try {
+      // 1. อัปโหลดเฉพาะ "รูปแรกสุด" (รูปหน้าปก) ไปเก็บที่ Storage แค่รูปเดียว!
+      const mainImage = capturedImages[0]
+      const fileName = `${user.id}-${Date.now()}.jpg`
+      const { error: uploadError } = await supabase.storage.from('encounters').upload(fileName, mainImage.blob)
+      if (uploadError) throw uploadError
+      const { data: { publicUrl } } = supabase.storage.from('encounters').getPublicUrl(fileName)
+
       let finalCatId = matchedCat?.id
 
-      // 1. จัดการข้อมูลแมว (ถ้าเป็นแมวใหม่)
       if (matchType === 'new') {
         if (!newCatName) {
           alert('กรุณาตั้งชื่อน้องแมวด้วยครับ')
@@ -233,40 +239,44 @@ export default function HuntPage() {
         await supabase.from('cats').update({ last_seen: new Date().toISOString() }).eq('id', finalCatId)
       }
 
-      const baseDescription = description.trim() !== '' 
+      const finalDescription = description.trim() !== '' 
         ? description.trim() 
         : (matchType === 'new' ? `New discovery: ${newCatName}` : `Spotted ${matchedCat?.name}`)
 
-      // 🌟 2. ลูปอัปโหลด "ทุกรูป" แยกกัน เพื่อให้ได้ URL ของรูปนั้นจริงๆ
-      for (let i = 0; i < capturedImages.length; i++) {
-        const capture = capturedImages[i];
-        
-        // ตั้งชื่อไฟล์ให้ไม่ซ้ำกันด้วย index (i)
-        const fileName = `${user.id}-${Date.now()}-${i}.jpg`
-        const { error: uploadError } = await supabase.storage.from('encounters').upload(fileName, capture.blob)
-        if (uploadError) throw uploadError
-        
-        // ดึง URL ของรูปที่เพิ่งอัปโหลดเสร็จ
-        const { data: { publicUrl } } = supabase.storage.from('encounters').getPublicUrl(fileName)
+      // 🌟 2. บันทึกโพสต์หลัก (ตัวนี้แหละที่จะไปโชว์บนฟีด)
+      const { error: mainEncError } = await supabase
+        .from('encounters')
+        .insert({
+          cat_id: finalCatId,
+          user_id: user.id,
+          image_url: publicUrl,
+          description: finalDescription,
+          lat: location?.lat || null,
+          lng: location?.lng || null,
+          image_embedding: `[${capturedImages[0].vector.join(',')}]`,
+          is_training: false // 👈 โพสต์หลัก
+        })
+      if (mainEncError) throw mainEncError
 
-        // ถ้ารูปไม่ใช่รูปหน้าปก (index > 0) ให้เพิ่มคำอธิบายต่อท้าย จะได้ไม่ดูซ้ำกันในฟีด
-        const finalDescription = i === 0 ? baseDescription : `${baseDescription} (มุมฝึก AI)`
+      // 🌟 3. บันทึกรูปที่ 2, 3, 4 เป็นแค่ Data แอบฝังไว้สอน AI (ไม่โชว์บนฟีด)
+      if (capturedImages.length > 1) {
+        const trainingRecords = capturedImages.slice(1).map(capture => ({
+          cat_id: finalCatId,
+          user_id: user.id,
+          image_url: publicUrl, // แปะ URL รูปหลักไว้เฉยๆ ไม่ต้องอัปโหลดรูปซ้ำ
+          description: 'AI Training Data',
+          lat: location?.lat || null,
+          lng: location?.lng || null,
+          image_embedding: `[${capture.vector.join(',')}]`,
+          is_training: true // 👈 แฟล็กบอกว่าเป็นแค่ Data ลับ!
+        }))
 
-        const { error: encError } = await supabase
-          .from('encounters')
-          .insert({
-            cat_id: finalCatId,
-            user_id: user.id,
-            image_url: publicUrl, // 👈 คราวนี้ใช้ URL จริงของแต่ละรูปแล้ว!
-            description: finalDescription,
-            lat: location?.lat || null,
-            lng: location?.lng || null,
-            image_embedding: `[${capture.vector.join(',')}]` 
-          })
-        if (encError) throw encError
+        // Insert รวดเดียว 3 แถว
+        const { error: trainError } = await supabase.from('encounters').insert(trainingRecords)
+        if (trainError) throw trainError
       }
 
-      // 3. อัปเดตสถิติผู้ใช้
+      // 4. อัปเดตสถิติโปรไฟล์
       const { data: profile } = await supabase.from('profiles').select('cats_found').eq('id', user.id).single()
       await supabase.from('profiles').update({ cats_found: (profile?.cats_found || 0) + 1 }).eq('id', user.id)
 

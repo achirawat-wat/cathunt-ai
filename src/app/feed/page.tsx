@@ -39,6 +39,7 @@ export default function FeedPage() {
           cats ( id, name, area ),
           profiles ( id, username, avatar_url )
         `)
+        .eq('is_training', false)
         .order('created_at', { ascending: false })
         .limit(20) 
 
