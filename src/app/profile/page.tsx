@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
-import { Settings, LogOut, Compass, Heart, Camera, Loader2, Cat } from 'lucide-react'
+import { LogOut, Compass, Heart, Camera, Loader2, Cat, MessageSquarePlus, X, Check } from 'lucide-react'
 
 function timeAgo(dateString: string) {
   const date = new Date(dateString)
@@ -18,8 +18,17 @@ function timeAgo(dateString: string) {
   return `${Math.floor(diffInSeconds / 86400)}d ago`
 }
 
+// 💬 Quick-select presets for the feedback title
+const FEEDBACK_PRESETS = [
+  { emoji: '🐛', label: 'Bug report' },
+  { emoji: '💡', label: 'Feature request' },
+  { emoji: '🎨', label: 'UI/UX issue' },
+  { emoji: '⚡', label: 'App is slow/stuck' },
+  { emoji: '🙏', label: 'Other' },
+]
+
 export default function ProfilePage() {
-  // 🚀 เพิ่ม setProfile มาจาก Zustand เพื่ออัปเดตข้อมูลแบบ Real-time เมื่ออัปรูปเสร็จ
+  // 🚀 setProfile from Zustand, used to update state in real time after avatar upload
   const { user, profile: globalProfile, loading: authLoading, setProfile } = useAuthStore()
   
   const [activeTab, setActiveTab] = useState<'posts' | 'favorites'>('posts')
@@ -28,9 +37,17 @@ export default function ProfilePage() {
   const [isFetchingPosts, setIsFetchingPosts] = useState(true)
   
   const [avatarError, setAvatarError] = useState(false)
-  // 📸 State และ Ref สำหรับระบบอัปโหลดรูป
+  // 📸 State and ref for the avatar upload flow
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // 💬 State for the Feedback modal
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false)
+  const [feedbackTitle, setFeedbackTitle] = useState('')
+  const [feedbackDescription, setFeedbackDescription] = useState('')
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false)
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false)
+  const [feedbackError, setFeedbackError] = useState('')
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -84,7 +101,7 @@ export default function ProfilePage() {
     }
   }
 
-  // 🚀 ฟังก์ชันจัดการการอัปโหลดรูป Profile
+  // 🚀 Handles profile avatar upload
 const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
       if (!event.target.files || event.target.files.length === 0 || !user) return
@@ -97,29 +114,29 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
       const fileName = `${user.id}-${Date.now()}.${fileExt}`
       const filePath = `${fileName}`
 
-      // 1. ดึงชื่อไฟล์เก่าออกมาเตรียมลบ (ถ้ามี avatar_url)
+      // 1. Get the old filename ready to delete (if avatar_url exists)
       const oldAvatarUrl = globalProfile?.avatar_url
       let oldFilePath = null
       
       if (oldAvatarUrl) {
-        // ดึงชื่อไฟล์จาก URL (สมมติ URL อยู่ในรูปแบบ .../avatars/filename)
+        // Extract filename from URL (assumes URL is in the form .../avatars/filename)
         const parts = oldAvatarUrl.split('/')
         oldFilePath = parts[parts.length - 1]
       }
 
-      // 2. อัปโหลดรูปใหม่
+      // 2. Upload the new image
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(filePath, file, { upsert: true })
 
       if (uploadError) throw uploadError
 
-      // 3. ดึง Public URL ของรูปใหม่
+      // 3. Get the public URL of the new image
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
         .getPublicUrl(filePath)
 
-      // 4. อัปเดต Database ให้ชี้ไปที่รูปใหม่
+      // 4. Update the database to point to the new image
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: publicUrl })
@@ -127,15 +144,15 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
 
       if (updateError) throw updateError
 
-      // 5. ถ้ามีรูปเก่าและไม่ใช่รูปเริ่มต้น ให้ลบทิ้ง
+      // 5. If there's an old image and it's not the default, delete it
       if (oldFilePath && oldFilePath !== 'placeholder.png') {
-        // เช็คก่อนว่าเป็นไฟล์ที่เราอัปเองไหม (ดูจากชื่อที่ขึ้นต้นด้วย user.id)
+        // Check it's a file we uploaded (name starts with user.id)
         if (oldFilePath.startsWith(user.id)) {
            await supabase.storage.from('avatars').remove([oldFilePath])
         }
       }
 
-      // 6. อัปเดต Store
+      // 6. Update the store
       if (setProfile) {
         setProfile({ ...globalProfile, avatar_url: publicUrl })
       }
@@ -154,6 +171,51 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
       await supabase.auth.signOut()
     } catch (error) {
       console.error('Error logging out:', error)
+    }
+  }
+
+  // 💬 Open the Feedback modal (reset state each time it opens)
+  const openFeedbackModal = () => {
+    setFeedbackTitle('')
+    setFeedbackDescription('')
+    setFeedbackError('')
+    setFeedbackSubmitted(false)
+    setShowFeedbackModal(true)
+  }
+
+  const closeFeedbackModal = () => {
+    if (isSubmittingFeedback) return
+    setShowFeedbackModal(false)
+  }
+
+  // 💬 Submit feedback to Supabase
+  const handleSubmitFeedback = async () => {
+    if (!user || !feedbackTitle.trim()) {
+      setFeedbackError('Please choose or enter a title before submitting')
+      return
+    }
+
+    try {
+      setIsSubmittingFeedback(true)
+      setFeedbackError('')
+
+      const { error } = await supabase.from('feedback').insert({
+        user_id: user.id,
+        title: feedbackTitle.trim(),
+        description: feedbackDescription.trim() || null,
+      })
+
+      if (error) throw error
+
+      setFeedbackSubmitted(true)
+      setTimeout(() => {
+        setShowFeedbackModal(false)
+      }, 1200)
+    } catch (error: any) {
+      console.error('Error submitting feedback:', error.message)
+      setFeedbackError('Failed to submit. Please try again.')
+    } finally {
+      setIsSubmittingFeedback(false)
     }
   }
 
@@ -184,8 +246,11 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
             </h1>
           </div>
           
-          <button className="relative flex h-10 w-10 items-center justify-center rounded-[1rem] bg-zinc-100 text-zinc-900 active:scale-95 transition-transform hover:bg-zinc-200 dark:bg-zinc-800 dark:text-white dark:hover:bg-zinc-700">
-            <Settings className="h-4 w-4" />
+          <button
+            onClick={openFeedbackModal}
+            className="relative flex h-10 w-10 items-center justify-center rounded-[1rem] bg-zinc-100 text-zinc-900 active:scale-95 transition-transform hover:bg-zinc-200 dark:bg-zinc-800 dark:text-white dark:hover:bg-zinc-700"
+          >
+            <MessageSquarePlus className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -202,7 +267,7 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
               </div>
             )}
 
-            {/* Input ซ่อนไว้สำหรับอัปโหลดไฟล์ */}
+            {/* Hidden input for file upload */}
             <input 
               type="file" 
               accept="image/*"
@@ -211,7 +276,7 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
               onChange={handleAvatarUpload}
             />
 
-            {/* 📸 กรอบรูป Profile ที่คลิกเพื่อเปลี่ยนรูปได้ */}
+            {/* 📸 Profile avatar frame, click to change */}
             <div 
               onClick={() => !isUploadingAvatar && fileInputRef.current?.click()}
               className="relative w-24 h-24 rounded-[1.5rem] overflow-hidden mb-4 shadow-sm border-[3px] border-orange-50 dark:border-orange-500/20 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center group cursor-pointer transition-transform active:scale-95"
@@ -347,6 +412,114 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
         </div>
 
       </div>
+
+      {/* 💬 Feedback Modal */}
+      {showFeedbackModal && (
+        <div className="fixed inset-0 z-[2000] flex items-end sm:items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={closeFeedbackModal}
+          />
+
+          {/* Panel */}
+          <div className="relative w-full sm:max-w-md bg-white dark:bg-zinc-900 rounded-t-[2rem] sm:rounded-[2rem] p-6 pb-8 sm:pb-6 shadow-2xl animate-in slide-in-from-bottom duration-200 max-h-[90vh] overflow-y-auto">
+            
+            {feedbackSubmitted ? (
+              /* Success State */
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <div className="h-14 w-14 rounded-full bg-green-50 dark:bg-green-500/10 flex items-center justify-center mb-4">
+                  <Check className="h-7 w-7 text-green-500" />
+                </div>
+                <p className="font-black text-zinc-900 dark:text-white uppercase tracking-wide">
+                  Thanks for your feedback!
+                </p>
+                <p className="text-xs text-zinc-400 mt-1">We'll use it to make the app better</p>
+              </div>
+            ) : (
+              <>
+                {/* Header */}
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="text-lg font-black tracking-wide text-zinc-900 dark:text-white uppercase">
+                    Feedback<span className="text-orange-500">.</span>
+                  </h3>
+                  <button
+                    onClick={closeFeedbackModal}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 active:scale-95 transition-transform hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Quick-select presets */}
+                <p className="text-[10px] font-black tracking-widest uppercase text-zinc-400 mb-2">
+                  Title
+                </p>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {FEEDBACK_PRESETS.map((preset) => {
+                    const presetLabel = `${preset.emoji} ${preset.label}`
+                    const isActive = feedbackTitle === presetLabel
+                    return (
+                      <button
+                        key={preset.label}
+                        onClick={() => setFeedbackTitle(presetLabel)}
+                        className={`px-3 py-2 rounded-[1rem] text-[11px] font-bold flex items-center space-x-1.5 active:scale-95 transition-all border ${
+                          isActive
+                            ? 'bg-zinc-900 text-white border-zinc-900 dark:bg-white dark:text-zinc-900 dark:border-white'
+                            : 'bg-zinc-50 text-zinc-600 border-zinc-100 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-800 dark:hover:bg-zinc-700'
+                        }`}
+                      >
+                        <span>{preset.emoji}</span>
+                        <span>{preset.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Title input (editable, quick-select fills this in) */}
+                <input
+                  type="text"
+                  value={feedbackTitle}
+                  onChange={(e) => setFeedbackTitle(e.target.value)}
+                  placeholder="Type your own title, or pick one above"
+                  maxLength={100}
+                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 rounded-[1rem] px-4 py-3 text-sm font-bold text-zinc-900 dark:text-white placeholder:text-zinc-400 placeholder:font-medium mb-4 focus:outline-none focus:ring-2 focus:ring-orange-500/40"
+                />
+
+                {/* Description */}
+                <p className="text-[10px] font-black tracking-widest uppercase text-zinc-400 mb-2">
+                  Description (optional)
+                </p>
+                <textarea
+                  value={feedbackDescription}
+                  onChange={(e) => setFeedbackDescription(e.target.value)}
+                  placeholder="Add more detail, e.g. what happened or what you'd like to see..."
+                  rows={4}
+                  maxLength={1000}
+                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 rounded-[1rem] px-4 py-3 text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 mb-2 resize-none focus:outline-none focus:ring-2 focus:ring-orange-500/40"
+                />
+
+                {feedbackError && (
+                  <p className="text-[11px] font-bold text-red-500 mb-2">{feedbackError}</p>
+                )}
+
+                {/* Submit */}
+                <button
+                  onClick={handleSubmitFeedback}
+                  disabled={isSubmittingFeedback || !feedbackTitle.trim()}
+                  className="w-full mt-3 bg-orange-500 text-white rounded-[1rem] py-3.5 font-black text-[11px] tracking-widest uppercase flex items-center justify-center space-x-2 active:scale-95 transition-transform hover:bg-orange-600 disabled:opacity-40 disabled:hover:bg-orange-500 disabled:active:scale-100"
+                >
+                  {isSubmittingFeedback ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <span>Send Feedback</span>
+                  )}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   )
 }
