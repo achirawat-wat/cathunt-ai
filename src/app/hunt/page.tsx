@@ -30,7 +30,7 @@ export default function HuntPage() {
   const [hasCameraError, setHasCameraError] = useState(false)
   const [isCameraReady, setIsCameraReady] = useState(false)
 
-  // 📸 State สำหรับรูปภาพ (Index 0 = หน้าปก, Index 1, 2, 3 = มุมสอน AI)
+  // 📸 State for captured images (Index 0 = cover shot, Index 1-3 = AI training angles)
   const [capturedImages, setCapturedImages] = useState<{ url: string, blob: Blob, vector: number[] }[]>([])
   const [location, setLocation] = useState<{ lat: number; lng: number; name: string } | null>(null)
 
@@ -49,7 +49,7 @@ export default function HuntPage() {
   const [searchQuery, setSearchQuery] = useState('')
 
   // ลำดับมุมที่ต้องการให้ถ่าย (หลังจากถ่ายหน้าปกแล้ว)
-  const trainingAngles = ["หน้าตรง", "ด้านซ้าย", "ด้านขวา"]
+  const trainingAngles = ["Front", "Left side", "Right side"]
 
   useEffect(() => {
     if (!user) {
@@ -165,7 +165,7 @@ export default function HuntPage() {
           setTempImageUrl(null)
 
           if (!res.ok || !result.success) {
-            alert(result.error || 'วิเคราะห์ไม่ผ่าน ลองถ่ายมุมใหม่นะ 😿')
+            alert(result.error || 'Analysis failed. Try a different angle 😿')
             setStatus(isTrainingStep ? 'training' : 'idle')
             return
           }
@@ -195,7 +195,7 @@ export default function HuntPage() {
 
         } catch (error) {
           setTempImageUrl(null)
-          alert('ระบบขัดข้อง โปรดลองใหม่')
+          alert('Something went wrong. Please try again.')
           setStatus(isTrainingStep ? 'training' : 'idle')
         }
       }
@@ -218,7 +218,7 @@ export default function HuntPage() {
 
       if (matchType === 'new') {
         if (!newCatName) {
-          alert('กรุณาตั้งชื่อน้องแมวด้วยครับ')
+          alert('Please give this cat a name.')
           setIsSubmitting(false)
           return
         }
@@ -283,7 +283,7 @@ export default function HuntPage() {
       router.push('/feed')
 
     } catch (error: any) {
-      alert('บันทึกข้อมูลไม่สำเร็จ')
+      alert('Failed to save. Please try again.')
       setIsSubmitting(false)
     }
   }
@@ -398,7 +398,7 @@ export default function HuntPage() {
         {status === 'scanning' && (
           <div className="flex flex-col items-center justify-center bg-black/40 backdrop-blur-xl px-6 py-4 rounded-2xl animate-in zoom-in-95">
             <Loader2 className="h-6 w-6 text-white animate-spin mb-3" />
-            <span className="font-bold tracking-widest text-[10px] uppercase text-white">Analyzing DNA...</span>
+            <span className="font-bold tracking-widest text-[10px] uppercase text-white">Analyzing Cat...</span>
           </div>
         )}
       </div>
@@ -412,7 +412,7 @@ export default function HuntPage() {
             {status === 'training' && !tempImageUrl && (
               <div className="bg-black/40 backdrop-blur-md px-5 py-2 rounded-full text-white font-bold text-xs tracking-wider animate-in fade-in zoom-in duration-300">
                 {/* คำนวณคำอธิบายให้ตรงกับ Index ของ Array */}
-                📸 ถ่ายมุม: {trainingAngles[capturedImages.length - 1]} ({capturedImages.length}/3)
+                📸 Capture angle: {trainingAngles[capturedImages.length - 1]} ({capturedImages.length}/3)
               </div>
             )}
 
@@ -437,7 +437,7 @@ export default function HuntPage() {
 
             {status === 'training' && (
                <button onClick={() => setShowCatList(true)} className="text-sm font-bold text-white underline underline-offset-4 pt-2 shadow-sm drop-shadow-md">
-                 ฉันรู้จักแมวตัวนี้อยู่แล้ว (ข้ามการฝึก)
+                 I already know this cat (skip training)
                </button>
             )}
           </div>
@@ -447,7 +447,7 @@ export default function HuntPage() {
         {showCatList && (
            <div className="absolute bottom-0 left-0 w-full h-[75vh] bg-white rounded-t-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom z-50 text-zinc-900 flex flex-col">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="font-black text-xl">เลือกรายชื่อแมว</h3>
+                <h3 className="font-black text-xl">Select a cat</h3>
                 <button onClick={() => setShowCatList(false)}><X className="w-6 h-6 text-zinc-400"/></button>
               </div>
 
@@ -457,7 +457,7 @@ export default function HuntPage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="ค้นหาชื่อแมว..."
+                  placeholder="Search cat name..."
                   className="w-full bg-zinc-100 rounded-xl h-12 pl-10 pr-4 outline-none font-bold text-zinc-700 focus:ring-2 focus:ring-orange-500"
                 />
               </div>
@@ -466,7 +466,7 @@ export default function HuntPage() {
                 <button onClick={handleDeclareAsNew} className="w-full text-left p-4 bg-orange-50 hover:bg-orange-100 rounded-xl flex justify-between items-center mb-4 border border-orange-200 transition-colors">
                   <div className="flex items-center space-x-2 text-orange-600">
                     <Plus className="w-5 h-5" />
-                    <span className="font-bold">เพิ่มเป็นแมวตัวใหม่ (New Discovery)</span>
+                    <span className="font-bold">Add as a new cat (New Discovery)</span>
                   </div>
                 </button>
 
@@ -477,12 +477,12 @@ export default function HuntPage() {
                       <div>
                         <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                           <span className="font-bold text-zinc-900">{cat.name}</span>
-                          {isAIMatch && <span className="text-[9px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">🎯 AI แนะนำ</span>}
-                          {cat.hasInteracted && !isAIMatch && <span className="text-[9px] bg-green-100 text-green-600 px-2 py-0.5 rounded-full font-bold">⭐ เคยเจอแล้ว</span>}
+                          {isAIMatch && <span className="text-[9px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">🎯 AI suggested</span>}
+                          {cat.hasInteracted && !isAIMatch && <span className="text-[9px] bg-green-100 text-green-600 px-2 py-0.5 rounded-full font-bold">⭐ Seen before</span>}
                         </div>
                         <span className="text-xs text-zinc-400 flex items-center mt-1">
                           {cat.area}
-                          {cat.distance !== Infinity && ` • ห่าง ${cat.distance < 1 ? (cat.distance * 1000).toFixed(0) + ' ม.' : cat.distance.toFixed(1) + ' กม.'}`}
+                          {cat.distance !== Infinity && ` • ${cat.distance < 1 ? (cat.distance * 1000).toFixed(0) + ' m' : cat.distance.toFixed(1) + ' km'} away`}
                         </span>
                       </div>
                     </button>
@@ -524,7 +524,7 @@ export default function HuntPage() {
                   </div>
 
                   <div className="mb-6">
-                    <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="น้องแมวกำลังทำอะไร? (Optional)" className="w-full bg-zinc-50 rounded-[1.2rem] h-14 px-5 text-base font-bold outline-none" />
+                    <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="What's the cat doing? (Optional)" className="w-full bg-zinc-50 rounded-[1.2rem] h-14 px-5 text-base font-bold outline-none" />
                   </div>
 
                   <div className="flex flex-col space-y-3">
@@ -532,10 +532,10 @@ export default function HuntPage() {
                       {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Confirm Sighting'}
                     </button>
                     <button onClick={() => setShowCatList(true)} disabled={isSubmitting} className="w-full bg-zinc-100 text-zinc-600 h-14 rounded-[1.2rem] font-bold">
-                      ไม่ใช่ตัวนี้ (เลือกเอง / แมวใหม่)
+                      Not this cat (choose manually / new cat)
                     </button>
                     <button onClick={resetCamera} disabled={isSubmitting} className="w-full text-zinc-400 h-10 font-bold underline">
-                      ถ่ายใหม่
+                      Retake
                     </button>
                   </div>
                 </>
@@ -547,19 +547,19 @@ export default function HuntPage() {
                   </div>
 
                   <div className="space-y-4 mb-6">
-                    <input type="text" value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="ตั้งชื่อน้องแมวตัวใหม่" className="w-full bg-zinc-50 rounded-[1.2rem] h-14 px-5 font-bold outline-none border-2 border-orange-100 focus:border-orange-500" />
-                    <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="รายละเอียดเพิ่มเติม (Optional)" className="w-full bg-zinc-50 rounded-[1.2rem] h-14 px-5 font-bold outline-none" />
+                    <input type="text" value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="Name this new cat" className="w-full bg-zinc-50 rounded-[1.2rem] h-14 px-5 font-bold outline-none border-2 border-orange-100 focus:border-orange-500" />
+                    <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (Optional)" className="w-full bg-zinc-50 rounded-[1.2rem] h-14 px-5 font-bold outline-none" />
                   </div>
 
                   <div className="flex flex-col space-y-3">
                     <button onClick={submitEncounter} disabled={isSubmitting || !newCatName} className="w-full bg-orange-500 text-white h-14 rounded-[1.2rem] font-bold flex justify-center items-center disabled:opacity-50">
-                      {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : 'ลงทะเบียนแมวใหม่ (เก็บ 3 มุม)'}
+                      {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Register new cat'}
                     </button>
                     <button onClick={() => setShowCatList(true)} disabled={isSubmitting} className="w-full bg-zinc-100 text-zinc-600 h-14 rounded-[1.2rem] font-bold">
-                      ฉันรู้จักแมวตัวนี้อยู่แล้ว
+                      I already know this cat
                     </button>
                     <button onClick={resetCamera} disabled={isSubmitting} className="w-full text-zinc-400 h-10 font-bold underline">
-                      ยกเลิก
+                      Cancel
                     </button>
                   </div>
                 </>

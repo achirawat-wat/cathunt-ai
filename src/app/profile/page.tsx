@@ -50,6 +50,7 @@ export default function ProfilePage() {
           likes_count,
           cats ( id, name )
         `)
+        .eq('is_training', false)
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
 

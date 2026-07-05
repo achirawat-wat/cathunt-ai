@@ -98,7 +98,7 @@ export default function FeedPage() {
   const allFetchedRawRef = useRef<any[]>([])
   const offsetRef = useRef(0)
   const dbExhaustedRef = useRef(false)
-  const isRandomModeRef = useRef(false)
+  const shownIdsRef = useRef<Set<string>>(new Set()) // กันโพสต์ซ้ำในเซสชั่นนี้ (ทั้ง path ปกติและ path สำรอง)
   const isLoadingMoreRef = useRef(false)
   const hasMoreRef = useRef(true)
   const initializedRef = useRef(false)
@@ -226,20 +226,28 @@ export default function FeedPage() {
 
         allFetchedRawRef.current.push(...data)
 
-        const unseen = data.filter((row: any) => !seenIdsRef.current.has(row.id))
+        // กันไม่ให้เอาโพสต์ที่เคย "เห็น" มาก่อน (จาก post_views) หรือ "โชว์ไปแล้วในเซสชั่นนี้" กลับเข้า buffer อีก
+        const unseen = data.filter(
+          (row: any) => !seenIdsRef.current.has(row.id) && !shownIdsRef.current.has(row.id)
+        )
         const scored = unseen.map((row: any) => ({ raw: row, score: scorePost(row, followedCatIdsRef.current) }))
 
         bufferRef.current = [...bufferRef.current, ...scored].sort((a, b) => b.score - a.score)
       }
 
-      // 2. ถ้าไม่เหลือโพสต์ใหม่ที่ยังไม่เคยเห็นแล้ว -> สลับเป็นโหมดสุ่ม (โชว์ซ้ำได้)
+      // 2. ถ้าดึงจน DB หมดแล้ว buffer ยังว่าง -> ลองหาโพสต์ที่ "ยังไม่เคยโชว์ในเซสชั่นนี้" มาเติมแทน
+      //    (เผื่อ user เคยเห็นโพสต์นี้จากทริปก่อนหน้า แต่ยังไม่เห็นในรอบนี้)
+      //    ถ้าไม่เหลือจริงๆ (ทุกโพสต์ถูกโชว์ในเซสชั่นนี้ไปหมดแล้ว) ให้จบฟีดตรงนี้ ไม่วนซ้ำ
       if (bufferRef.current.length === 0 && dbExhaustedRef.current) {
-        if (allFetchedRawRef.current.length === 0) {
+        const unshownThisSession = allFetchedRawRef.current.filter(
+          (row: any) => !shownIdsRef.current.has(row.id)
+        )
+
+        if (unshownThisSession.length === 0) {
           hasMoreRef.current = false
           setHasMore(false)
         } else {
-          isRandomModeRef.current = true
-          const shuffled = shuffle(allFetchedRawRef.current)
+          const shuffled = shuffle(unshownThisSession)
           bufferRef.current = shuffled.map((row: any) => ({
             raw: row,
             score: scorePost(row, followedCatIdsRef.current)
@@ -252,7 +260,12 @@ export default function FeedPage() {
       bufferRef.current = bufferRef.current.slice(PAGE_SIZE)
 
       if (nextBatch.length > 0) {
+        nextBatch.forEach((item) => shownIdsRef.current.add(item.raw.id))
         setFeeds((prev) => [...prev, ...nextBatch.map((item) => formatPost(item.raw))])
+      } else if (hasMoreRef.current) {
+        // เผื่อ edge case: ไม่มีอะไรให้เพิ่มแต่ hasMore ยังไม่ถูก set false (เช่น error กลางทาง)
+        hasMoreRef.current = false
+        setHasMore(false)
       }
     } finally {
       isLoadingMoreRef.current = false
