@@ -3,7 +3,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { Heart, MessageCircle, Check, Plus, MapPin, Send, Share2, Loader2 } from 'lucide-react'
+import { Heart, MessageCircle, Check, Plus, MapPin, Send, Share2, Loader2, Cat } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 
@@ -23,6 +23,43 @@ function timeAgo(dateString: string) {
 function formatCount(num: number) {
   if (!num || num < 1000) return String(num || 0)
   return new Intl.NumberFormat('en', { notation: 'compact' }).format(num)
+}
+
+// 🐱 Avatar component: โชว์รูปจริงถ้ามี ไม่งั้น fallback เป็น cat icon
+function Avatar({
+  src,
+  alt,
+  size = 'w-11 h-11',
+  rounded = 'rounded-[1.2rem]',
+  iconSize = 'h-5 w-5',
+}: {
+  src?: string | null
+  alt: string
+  size?: string
+  rounded?: string
+  iconSize?: string
+}) {
+  const [avatarError, setAvatarError] = useState(false)
+
+  const showRealAvatar =
+    !!src && !avatarError && !src.includes('unsplash.com/photo-1599566')
+
+  return (
+    <div
+      className={`${size} ${rounded} bg-zinc-100 dark:bg-zinc-800 shadow-sm border border-zinc-100 dark:border-zinc-700 flex items-center justify-center overflow-hidden shrink-0`}
+    >
+      {showRealAvatar ? (
+        <img
+          src={src as string}
+          alt={alt}
+          className="w-full h-full object-cover"
+          onError={() => setAvatarError(true)}
+        />
+      ) : (
+        <Cat className={`${iconSize} text-zinc-400 dark:text-zinc-500`} />
+      )}
+    </div>
+  )
 }
 
 interface FeedCardProps {
@@ -220,7 +257,7 @@ export default function FeedCard({ feed }: FeedCardProps) {
       created_at: new Date().toISOString(),
       profiles: {
         username: globalProfile?.username || 'You',
-        avatar_url: globalProfile?.avatar_url || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?q=80&w=150'
+        avatar_url: globalProfile?.avatar_url || null
       }
     }
     setComments(prev => [...prev, tempComment])
@@ -270,11 +307,7 @@ export default function FeedCard({ feed }: FeedCardProps) {
       <div className="flex justify-between items-center p-4">
         <div className="flex items-center space-x-3">
           <div className="relative">
-            <img
-              src={feed.user.avatar}
-              alt={feed.user.name}
-              className="w-11 h-11 rounded-[1.2rem] object-cover bg-zinc-100 dark:bg-zinc-800 shadow-sm border border-zinc-100 dark:border-zinc-700"
-            />
+            <Avatar src={feed.user.avatar} alt={feed.user.name} />
           </div>
           <div>
             <p className="text-[13px] text-zinc-900 dark:text-zinc-100 leading-tight">
@@ -386,10 +419,12 @@ export default function FeedCard({ feed }: FeedCardProps) {
             ) : (
               comments.map((comment) => (
                 <div key={comment.id} className="flex space-x-3 items-start animate-in fade-in slide-in-from-bottom-2">
-                  <img
-                    src={comment.profiles?.avatar_url || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?q=80&w=150'}
-                    alt="avatar"
-                    className="w-7 h-7 rounded-full object-cover bg-zinc-100 mt-0.5"
+                  <Avatar
+                    src={comment.profiles?.avatar_url}
+                    alt={comment.profiles?.username || 'avatar'}
+                    size="w-7 h-7"
+                    rounded="rounded-full"
+                    iconSize="h-3.5 w-3.5"
                   />
                   <div className="flex-1 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl rounded-tl-sm px-4 py-2.5">
                     <div className="flex items-center justify-between mb-0.5">
@@ -405,10 +440,12 @@ export default function FeedCard({ feed }: FeedCardProps) {
 
           {/* ✏️ Comment Input box with Avatar */}
           <form onSubmit={submitComment} className="flex items-center space-x-3 mt-2">
-            <img
-              src={globalProfile?.avatar_url || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?q=80&w=150'}
+            <Avatar
+              src={globalProfile?.avatar_url}
               alt="You"
-              className="w-8 h-8 rounded-full object-cover bg-zinc-200"
+              size="w-8 h-8"
+              rounded="rounded-full"
+              iconSize="h-4 w-4"
             />
             <div className="relative flex-1">
               <input

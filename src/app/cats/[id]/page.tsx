@@ -3,9 +3,46 @@
 
 import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Share, MapPin, Heart, Calendar, Clock, Image as ImageIcon, Send, MessageSquare, Loader2, Check, Plus } from 'lucide-react'
+import { ArrowLeft, Share, MapPin, Heart, Calendar, Clock, Image as ImageIcon, Send, MessageSquare, Loader2, Check, Plus, Cat as CatIcon } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
+
+// 🐱 Avatar component: โชว์รูปจริงถ้ามี ไม่งั้น fallback เป็น cat icon
+function Avatar({
+  src,
+  alt,
+  size = 'w-10 h-10',
+  rounded = 'rounded-[1rem]',
+  iconSize = 'h-4 w-4',
+}: {
+  src?: string | null
+  alt: string
+  size?: string
+  rounded?: string
+  iconSize?: string
+}) {
+  const [avatarError, setAvatarError] = useState(false)
+
+  const showRealAvatar =
+    !!src && !avatarError && !src.includes('unsplash.com/photo-1599566')
+
+  return (
+    <div
+      className={`${size} ${rounded} bg-zinc-200 dark:bg-zinc-800 overflow-hidden shrink-0 flex items-center justify-center`}
+    >
+      {showRealAvatar ? (
+        <img
+          src={src as string}
+          alt={alt}
+          className="w-full h-full object-cover"
+          onError={() => setAvatarError(true)}
+        />
+      ) : (
+        <CatIcon className={`${iconSize} text-zinc-400 dark:text-zinc-500`} />
+      )}
+    </div>
+  )
+}
 
 export default function CatProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
@@ -15,7 +52,10 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
 
   const [cat, setCat] = useState<any>(null)
   const [encounters, setEncounters] = useState<any[]>([])
-  
+
+  // 🎲 รูป Cover ของ Hero Section (สุ่มจาก encounters ตอนโหลดข้อมูล)
+  const [coverImage, setCoverImage] = useState<string | null>(null)
+
   // States สำหรับระบบ Follow
   const [isFollowing, setIsFollowing] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -63,11 +103,21 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
         .from('encounters')
         .select('image_url, created_at, profiles(username, avatar_url), description')
         .eq('cat_id', catId)
+        //เพิ่ม.eq('is_training', false) ตรงนี้ถูกมั้ย
         .eq('is_training', false)
         .order('created_at', { ascending: false })
 
       if (encError) throw encError
-      setEncounters(encData || [])
+      const list = encData || []
+      setEncounters(list)
+
+      // 🎲 สุ่มรูป cover จาก encounters ทั้งหมด (is_training ถูกกรองออกไปแล้วจาก query ด้านบน)
+      if (list.length > 0) {
+        const randomIndex = Math.floor(Math.random() * list.length)
+        setCoverImage(list[randomIndex].image_url)
+      } else {
+        setCoverImage(null)
+      }
     } catch (error) {
       console.error('Error fetching cat profile:', error)
     } finally {
@@ -127,7 +177,7 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
       created_at: new Date().toISOString(),
       profiles: {
         username: profile?.username || 'You',
-        avatar_url: profile?.avatar_url || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?q=80&w=150'
+        avatar_url: profile?.avatar_url || null
       }
     }
     setNotes(prev => [tempNote, ...prev])
@@ -164,10 +214,6 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
     )
   }
 
-  const coverImage = encounters.length > 0
-    ? encounters[0].image_url
-    : 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=800'
-
   return (
     <main className="relative flex h-full w-full flex-col bg-zinc-50 dark:bg-zinc-950 overflow-hidden">
       
@@ -191,15 +237,21 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
         
         {/* 1. Hero Section */}
         <section className="relative w-full h-[400px] shrink-0 rounded-[2rem] overflow-hidden shadow-sm border border-zinc-100 dark:border-zinc-800 group">
-          <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105" style={{ backgroundImage: `url('${coverImage}')` }}></div>
+          <div
+            className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105"
+            style={{ backgroundImage: `url('${coverImage || 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=800'}')` }}
+          ></div>
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
           
-          <div className="absolute bottom-0 left-0 w-full p-6 flex justify-between items-end pb-8">
-            <div className="flex flex-col z-10">
-              <h1 className="text-4xl font-black text-white drop-shadow-lg leading-tight">{cat.name}</h1>
-              <div className="flex items-center space-x-1.5 mt-2 text-orange-400">
-                <MapPin className="h-4 w-4" />
-                <span className="text-sm font-bold tracking-wide text-white/90">
+          {/* 🔧 แก้ overflow: เพิ่ม gap, min-w-0 + truncate ที่ชื่อ, shrink-0 + whitespace-nowrap ที่ปุ่ม */}
+          <div className="absolute bottom-0 left-0 w-full p-6 flex items-end justify-between gap-3 pb-8">
+            <div className="flex flex-col z-10 min-w-0 flex-1">
+              <h1 className="text-3xl sm:text-4xl font-black text-white drop-shadow-lg leading-tight truncate">
+                {cat.name}
+              </h1>
+              <div className="flex items-center space-x-1.5 mt-2 text-orange-400 min-w-0">
+                <MapPin className="h-4 w-4 shrink-0" />
+                <span className="text-sm font-bold tracking-wide text-white/90 truncate">
                   {cat.area ? cat.area.split(',')[0] : 'Unknown Location'}
                 </span>
               </div>
@@ -208,13 +260,13 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
             <button
               onClick={handleFollow}
               disabled={isSubmitting}
-              className={`flex items-center space-x-2 px-5 py-3 rounded-[1.2rem] font-black text-[11px] tracking-widest uppercase transition-all shadow-xl active:scale-95 z-10 disabled:opacity-50 ${isFollowing ? 'bg-zinc-900 text-white shadow-zinc-900/20' : 'bg-orange-500 text-white shadow-orange-500/30'}`}
+              className={`flex items-center space-x-1.5 shrink-0 whitespace-nowrap px-4 py-2.5 sm:px-5 sm:py-3 rounded-[1.2rem] font-black text-[10px] sm:text-[11px] tracking-widest uppercase transition-all shadow-xl active:scale-95 z-10 disabled:opacity-50 ${isFollowing ? 'bg-zinc-900 text-white shadow-zinc-900/20' : 'bg-orange-500 text-white shadow-orange-500/30'}`}
             >
               {isSubmitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <>
-                  {isFollowing ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  {isFollowing ? <Check className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> : <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
                   <span>{isFollowing ? 'Following' : 'Follow'}</span>
                 </>
               )}
@@ -298,9 +350,7 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
           
           {/* ช่องกรอก Note */}
           <form onSubmit={handleSendNote} className="flex space-x-3 mb-6">
-            <div className="w-10 h-10 rounded-[1rem] bg-zinc-200 overflow-hidden shrink-0">
-              <img src={profile?.avatar_url || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?q=80&w=150'} className="w-full h-full object-cover" alt="Me" />
-            </div>
+            <Avatar src={profile?.avatar_url} alt="Me" />
             <div className="flex-1 relative">
               <input
                 type="text"
@@ -326,9 +376,7 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
             ) : (
               notes.map((note) => (
                 <div key={note.id} className="flex space-x-3 animate-in fade-in slide-in-from-top-2">
-                  <div className="w-10 h-10 rounded-[1rem] bg-zinc-200 overflow-hidden shrink-0 mt-0.5">
-                    <img src={note.profiles?.avatar_url || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?q=80&w=150'} className="w-full h-full object-cover" alt="Avatar" />
-                  </div>
+                  <Avatar src={note.profiles?.avatar_url} alt="Avatar" />
                   <div className="bg-zinc-50 rounded-[1.5rem] rounded-tl-none p-4 flex-1 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
                     <div className="flex justify-between items-center mb-1">
                       <span className="font-bold text-xs text-zinc-900 dark:text-white">

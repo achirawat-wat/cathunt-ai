@@ -1,10 +1,29 @@
 // src/app/cats/page.tsx
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import Link from 'next/link'
-import { Search, Library, MapPin, Lock, Loader2, X, Camera } from 'lucide-react'
+import { Search, Library, MapPin, Lock, Loader2, X, Camera, Navigation } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+
+// 📏 คำนวณระยะทางระหว่าง 2 พิกัด (หน่วยกิโลเมตร) ด้วยสูตร Haversine
+function getDistanceKm(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const R = 6371 // รัศมีโลก (km)
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLng = ((lng2 - lng1) * Math.PI) / 180
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
+function formatDistance(km: number) {
+  if (km < 1) return `${Math.round(km * 1000)} m`
+  return `${km.toFixed(1)} km`
+}
 
 export default function CatsGalleryPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'discovered'>('all')
@@ -16,8 +35,32 @@ export default function CatsGalleryPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
 
+  // 📍 ตำแหน่งผู้ใช้ปัจจุบัน
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [locationStatus, setLocationStatus] = useState<'loading' | 'granted' | 'denied'>('loading')
+
   useEffect(() => {
     fetchCats()
+  }, [])
+
+  // 📍 ขอตำแหน่งผู้ใช้ตอนโหลดหน้า
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setLocationStatus('denied')
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        setLocationStatus('granted')
+      },
+      (err) => {
+        console.warn('Geolocation error:', err.message)
+        setLocationStatus('denied')
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+    )
   }, [])
 
   useEffect(() => {
@@ -34,7 +77,8 @@ export default function CatsGalleryPage() {
           id,
           name,
           area,
-          encounters ( image_url, created_at )
+          first_seen,
+          encounters ( image_url, created_at, lat, lng )
         `)
         .order('first_seen', { ascending: false })
 
@@ -57,13 +101,17 @@ export default function CatsGalleryPage() {
           )
           
           const isDiscovered = sortedEncounters.length > 0
+          const latestEncounter = isDiscovered ? sortedEncounters[0] : null
           
           return {
             id: cat.id,
             name: cat.name || 'Unknown Cat',
             area: cat.area || 'Unknown Area',
             isDiscovered: isDiscovered,
-            coverImage: isDiscovered && sortedEncounters[0].image_url ? sortedEncounters[0].image_url : null
+            coverImage: latestEncounter?.image_url || null,
+            // 📍 พิกัดจาก encounter ล่าสุด (ใช้คำนวณระยะห่าง)
+            lat: latestEncounter?.lat ?? null,
+            lng: latestEncounter?.lng ?? null,
           }
         })
 
@@ -77,11 +125,34 @@ export default function CatsGalleryPage() {
     }
   }
 
+  // 📍 เพิ่มระยะทางเข้าไปในแต่ละตัว แล้ว sort ใกล้ไปไกล (ถ้ามีตำแหน่งผู้ใช้)
+  const catsWithDistance = useMemo(() => {
+    const withDist = catsList.map(cat => {
+      const distanceKm =
+        userLocation && cat.lat != null && cat.lng != null
+          ? getDistanceKm(userLocation.lat, userLocation.lng, cat.lat, cat.lng)
+          : null
+      return { ...cat, distanceKm }
+    })
+
+    if (!userLocation) {
+      // ไม่มีตำแหน่งผู้ใช้ -> คงลำดับเดิม (first_seen ล่าสุดก่อน)
+      return withDist
+    }
+
+    // แยกกลุ่มที่มีพิกัด (sort ใกล้->ไกล) กับกลุ่มที่ไม่มีพิกัด (ต่อท้าย)
+    const withCoords = withDist.filter(c => c.distanceKm !== null)
+    const withoutCoords = withDist.filter(c => c.distanceKm === null)
+    withCoords.sort((a, b) => (a.distanceKm as number) - (b.distanceKm as number))
+
+    return [...withCoords, ...withoutCoords]
+  }, [catsList, userLocation])
+
   const uniqueAreas = Array.from(new Set(catsList.map(cat => cat.area ? cat.area.split(',')[0].trim() : '')))
     .filter(a => a !== '' && a !== 'Unknown Area')
     .slice(0, 6)
 
-  const filteredCats = catsList.filter(cat => {
+  const filteredCats = catsWithDistance.filter(cat => {
     const matchTab = activeTab === 'all' || cat.isDiscovered
     
     const searchLower = searchQuery.toLowerCase().trim()
@@ -111,6 +182,16 @@ export default function CatsGalleryPage() {
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md">
             <Lock className="h-5 w-5" />
           </div>
+        </div>
+      )}
+
+      {/* 📍 Distance Badge */}
+      {cat.distanceKm !== null && cat.distanceKm !== undefined && (
+        <div className="absolute top-3 right-3 flex items-center space-x-1 bg-black/50 backdrop-blur-md px-2.5 py-1 rounded-full z-10">
+          <Navigation className="h-2.5 w-2.5 text-orange-400" />
+          <span className="text-[9px] font-black text-white tracking-wide">
+            {formatDistance(cat.distanceKm)}
+          </span>
         </div>
       )}
 
@@ -237,6 +318,16 @@ export default function CatsGalleryPage() {
       </div>
 
       <div className="flex-1 px-6 pt-[164px] pb-8 overflow-y-auto no-scrollbar">
+
+        {/* 📍 แจ้งเตือนถ้าปิด location permission (ไม่บล็อกการใช้งาน แค่บอกว่าเรียงแบบเดิม) */}
+        {locationStatus === 'denied' && !isLoading && catsList.length > 0 && (
+          <div className="mb-4 flex items-center space-x-2 bg-zinc-100 dark:bg-zinc-800 px-4 py-2.5 rounded-[1rem] animate-in fade-in duration-300">
+            <Navigation className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
+            <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400">
+              เปิด Location เพื่อเรียงแมวตามระยะใกล้-ไกลจากคุณ
+            </span>
+          </div>
+        )}
         
         {isLoading ? (
           <div className="flex flex-col items-center justify-center h-full space-y-4 pt-10">
