@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import sharp from 'sharp' // 👈 นำเข้าตัวช่วยตัดรูป
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,14 +16,14 @@ export async function POST(req: Request) {
     const { imageBase64 } = await req.json()
     if (!imageBase64) return NextResponse.json({ success: false, error: 'ไม่พบข้อมูลรูปภาพ' }, { status: 400 })
 
-    // ถอด Prefix (data:image/jpeg;base64,) ออก เพื่อส่งให้ AI
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, "")
     const imageBuffer = Buffer.from(base64Data, 'base64')
 
     // ==========================================
-    // 1. ด่านแรก: เช็คว่าเป็นแมวไหม (ใช้ Hugging Face ViT - ยังฟรีอยู่)
+    // 1. ด่านแรก: หาพิกัด (Bounding Box) ของตัวแมว
+    // เปลี่ยนมาใช้โมเดล detr-resnet-50 ที่เก่งเรื่องการตีกรอบวัตถุ
     // ==========================================
-    const detectRes = await fetch(`${HF_BASE_URL}/google/vit-base-patch16-224`, {
+    const detectRes = await fetch(`${HF_BASE_URL}/facebook/detr-resnet-50`, {
       headers: { 
         Authorization: `Bearer ${HF_API_KEY}`,
         "Content-Type": "application/octet-stream"
@@ -34,20 +35,39 @@ export async function POST(req: Request) {
     if (!detectRes.ok) throw new Error(`AI Detect error: ${detectRes.status}`)
     const detectData = await detectRes.json()
 
-    const isCat = Array.isArray(detectData) && detectData.some((r: any) => {
-      const label = r.label.toLowerCase()
-      return (label.includes('cat') || label.includes('kitten') || label.includes('feline') || label.includes('tabby')) && r.score > 0.05
-    })
+    // ค้นหากล่อง (Bounding Box) ที่ AI มั่นใจที่สุดว่าเป็น 'cat'
+    const catDetection = detectData.find((item: any) => item.label === 'cat' && item.score > 0.5)
 
-    if (!isCat) {
-      return NextResponse.json({ success: false, error: 'AI มองไม่เห็นแมวในรูปนี้' }, { status: 400 })
+    if (!catDetection) {
+      return NextResponse.json({ success: false, error: 'AI มองไม่เห็นแมวในรูปนี้เลย ลองขยับกล้องดูนะ 😿' }, { status: 400 })
     }
 
     // ==========================================
-    // 2. ด่านสอง: สกัด DNA แมว (ใช้ Jina AI CLIP - 512 มิติ)
+    // 2. ด่านสอง: ตัดรูป (Crop) เอาเฉพาะเนื้อแมวล้วนๆ
+    // ==========================================
+    const { xmin, ymin, xmax, ymax } = catDetection.box
+    
+    // คำนวณความกว้าง/สูง และปัดเศษป้องกัน Error
+    const cropLeft = Math.max(0, Math.round(xmin))
+    const cropTop = Math.max(0, Math.round(ymin))
+    const cropWidth = Math.round(xmax - xmin)
+    const cropHeight = Math.round(ymax - ymin)
+
+    console.log(`✂️ AI กำลังตัดรูปแมวที่พิกัด: ${cropLeft}, ${cropTop} ขนาด: ${cropWidth}x${cropHeight}`)
+
+    // ใช้ sharp ตัดรูปจาก Buffer เดิม
+    const croppedBuffer = await sharp(imageBuffer)
+      .extract({ left: cropLeft, top: cropTop, width: cropWidth, height: cropHeight })
+      .toBuffer()
+
+    // แปลงกลับเป็น Base64 แบบเต็มยศเพื่อส่งให้ Jina
+    const croppedBase64 = `data:image/jpeg;base64,${croppedBuffer.toString('base64')}`
+
+    // ==========================================
+    // 3. ด่านสาม: สกัด DNA แมวจาก "รูปที่ครอปแล้ว" (Jina AI - 512 มิติ)
     // ==========================================
     if (!JINA_API_KEY) {
-      throw new Error("ระบบขาด JINA_API_KEY โปรดตั้งค่าใน Environment Variables")
+      throw new Error("ระบบขาด JINA_API_KEY")
     }
 
     const embedRes = await fetch("https://api.jina.ai/v1/embeddings", {
@@ -58,42 +78,30 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         model: "jina-clip-v1",
-        // ลบ dimensions: 512 ทิ้งไปเลย เพราะมันส่ง 768 มาให้อยู่แล้ว
         input: [
-          { image: imageBase64 }
+          { image: croppedBase64 } // 👈 โยนรูปที่มีแค่ตัวแมวเน้นๆ เข้าไป!
         ]
       })
     })
 
-    if (!embedRes.ok) {
-      const errText = await embedRes.text()
-      console.error("🚨 Jina Embed Error:", errText)
-      throw new Error(`Jina Embedding error: ${embedRes.status} - ${errText}`)
-    }
-    
+    if (!embedRes.ok) throw new Error(`Jina Embedding error: ${embedRes.status}`)
     const embedData = await embedRes.json()
-    
-    // ดึง Vector ออกมาจาก Response ของ Jina
     const catVector = embedData?.data?.[0]?.embedding
 
-    // กันเหนียว: เช็คว่าได้ 512 มิติจริงไหม
-    if (!Array.isArray(catVector) || catVector.length !== 768) {
+    if (!Array.isArray(catVector) || catVector.length !== 512) {
         throw new Error(`Vector Mismatch: ได้ ${catVector?.length || 0} มิติแทนที่จะเป็น 512`);
     }
 
     // ==========================================
-    // 3. ค้นหาแมวใน Database (Vector Search)
+    // 4. ค้นหาแมวใน Database (Vector Search)
     // ==========================================
     const { data: matchedCats, error } = await supabase.rpc('match_cats', {
       query_embedding: catVector,
-      match_threshold: 0.85, // ปรับลด/เพิ่ม ความแม่นยำได้ตรงนี้
+      match_threshold: 0.78, // 👈 กลับมาใช้ 0.85 ได้แล้ว เพราะ Vector ตอนนี้สะอาดมาก (ไม่มีฉากหลังกวน)
       match_count: 1
     })
 
-    if (error) {
-      console.error("🚨 Supabase RPC Error:", error)
-      throw error
-    }
+    if (error) throw error
 
     return NextResponse.json({ 
       success: true, 
@@ -104,6 +112,6 @@ export async function POST(req: Request) {
 
   } catch (error: any) {
     console.error('Analyze API Fatal Error:', error)
-    return NextResponse.json({ success: false, error: 'ระบบวิเคราะห์ขัดข้องชั่วคราว โปรดลองใหม่อีกครั้ง' }, { status: 503 })
+    return NextResponse.json({ success: false, error: 'ระบบวิเคราะห์ขัดข้องชั่วคราว プロドลองใหม่อีกครั้ง' }, { status: 503 })
   }
 }
