@@ -36,6 +36,7 @@ export default function CatsGalleryPage() {
           area,
           encounters ( image_url, created_at )
         `)
+        .eq('is_training', false)
         .order('first_seen', { ascending: false })
 
       if (error) {

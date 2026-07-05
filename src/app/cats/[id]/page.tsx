@@ -54,6 +54,7 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
         .from('cats')
         .select('*')
         .eq('id', catId)
+        .eq('is_training', false)
         .single()
 
       if (catError) throw catError
