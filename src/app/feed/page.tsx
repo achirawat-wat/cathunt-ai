@@ -405,7 +405,7 @@ export default function FeedPage() {
             height: indicatorHeight,
             transition: isPullingRef.current ? 'none' : 'height 0.25s ease',
           }}
-          className="flex items-center justify-center overflow-hidden -mt-6 mb-0"
+          className="flex items-center justify-center overflow-hidden"
         >
           <div
             style={{
@@ -439,6 +439,9 @@ export default function FeedPage() {
               </div>
             </div>
           ))
+        ) : feeds.length === 0 && isRefreshing ? (
+          // 🔄 ระหว่างรีเฟรช feeds ถูกเคลียร์เป็น [] ชั่วคราว — โชว์ค่าว่างเปล่าไปก่อน ไม่ต้องมี empty state โผล่มาแป๊บนึง
+          <div className="h-10" />
         ) : feeds.length === 0 ? (
           <div className="text-center py-20 flex flex-col items-center justify-center space-y-4 opacity-50">
             <Cat className="h-16 w-16 text-zinc-300 dark:text-zinc-700" />
