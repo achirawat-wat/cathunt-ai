@@ -25,6 +25,9 @@ function formatCount(num: number) {
   return new Intl.NumberFormat('en', { notation: 'compact' }).format(num)
 }
 
+// 🆕 เกณฑ์ความ "ใหม่" ของโพสต์ (2 นาที)
+const NEW_POST_THRESHOLD_MS = 2 * 60 * 1000
+
 // 🐱 Avatar component: โชว์รูปจริงถ้ามี ไม่งั้น fallback เป็น cat icon
 function Avatar({
   src,
@@ -66,6 +69,9 @@ interface FeedCardProps {
   feed: {
     id: string
     time: string
+    // 🆕 timestamp ดิบ (ISO string) ของตอนที่โพสต์ถูกสร้าง ใช้คำนวณ badge "New"
+    // ถ้าไม่ส่งมา จะไม่มี badge New โชว์ (fallback แบบปลอดภัย)
+    createdAt?: string
     image: string
     content: string
     likes: number
@@ -96,6 +102,32 @@ export default function FeedCard({ feed }: FeedCardProps) {
 
   const lastTapRef = useRef<number>(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // 🆕 เช็คว่าโพสต์นี้ "ใหม่" อยู่ไหม (สร้างมาไม่เกิน 2 นาที)
+  const [isNew, setIsNew] = useState(false)
+
+  useEffect(() => {
+    if (!feed.createdAt) {
+      setIsNew(false)
+      return
+    }
+
+    const createdTime = new Date(feed.createdAt).getTime()
+    if (Number.isNaN(createdTime)) {
+      setIsNew(false)
+      return
+    }
+
+    const updateIsNew = () => {
+      const diff = Date.now() - createdTime
+      setIsNew(diff >= 0 && diff < NEW_POST_THRESHOLD_MS)
+    }
+
+    updateIsNew()
+    // เช็คทุก 5 วิ เพื่อให้ badge หายไปเองอัตโนมัติตอนเลยเวลา 2 นาที โดยไม่ต้อง refresh หน้า
+    const interval = setInterval(updateIsNew, 5000)
+    return () => clearInterval(interval)
+  }, [feed.createdAt])
 
   // 🔍 1. เช็คสถานะตอนโหลดการ์ดขึ้นมา (ว่าเคยไลก์หรือยัง)
   useEffect(() => {
@@ -153,9 +185,9 @@ export default function FeedCard({ feed }: FeedCardProps) {
   }, [showComments, feed.id])
 
   // 💖 ฟังก์ชันกดไลก์ (ทำงานจริงกับ DB)
- // 💖 ฟังก์ชันกดไลก์ (ให้ DB Trigger จัดการเลขให้)
+  // 💖 ฟังก์ชันกดไลก์ (ให้ DB Trigger จัดการเลขให้)
   const handleLike = async () => {
-    if (!user || isLiking) return 
+    if (!user || isLiking) return
     setIsLiking(true)
 
     const currentlyLiked = isLiked
@@ -292,12 +324,20 @@ export default function FeedCard({ feed }: FeedCardProps) {
   }
 
   return (
-    <article className="bg-white rounded-[2rem] shadow-sm border border-zinc-100 overflow-hidden dark:bg-zinc-900 dark:border-zinc-800 transition-all hover:shadow-md mb-6 relative">
+    <article className={`bg-white rounded-[2rem] shadow-sm border overflow-hidden dark:bg-zinc-900 transition-all hover:shadow-md mb-6 relative ${isNew ? 'border-orange-200 dark:border-orange-500/30 ring-2 ring-orange-100 dark:ring-orange-500/10' : 'border-zinc-100 dark:border-zinc-800'}`}>
 
       {/* 🍞 Toast */}
       {toastMsg && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 bg-zinc-900 text-white text-[11px] font-bold px-4 py-2 rounded-full shadow-lg animate-in fade-in slide-in-from-top-2 dark:bg-white dark:text-zinc-900">
           {toastMsg}
+        </div>
+      )}
+
+      {/* 🆕 New post ribbon มุมซ้ายบนของรูป */}
+      {isNew && (
+        <div className="absolute top-4 left-4 z-20 flex items-center space-x-1 bg-orange-500 text-white text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full shadow-lg animate-in fade-in zoom-in-95">
+          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+          <span>New</span>
         </div>
       )}
 
@@ -378,11 +418,10 @@ export default function FeedCard({ feed }: FeedCardProps) {
           onClick={handleFollow}
           disabled={isSubmitting}
           aria-label={isFollowing ? 'Unfollow this cat' : 'Follow this cat'}
-          className={`flex items-center space-x-1 px-4 py-2.5 rounded-[1rem] active:scale-95 transition-all font-black text-[10px] tracking-widest uppercase shadow-sm ${
-            isFollowing
+          className={`flex items-center space-x-1 px-4 py-2.5 rounded-[1rem] active:scale-95 transition-all font-black text-[10px] tracking-widest uppercase shadow-sm ${isFollowing
               ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-zinc-900/20'
               : 'bg-orange-50 text-orange-600 border border-orange-100 dark:bg-orange-500/10 dark:border-orange-500/20 dark:text-orange-500'
-          } ${isSubmitting ? 'opacity-50 cursor-wait' : ''}`}
+            } ${isSubmitting ? 'opacity-50 cursor-wait' : ''}`}
         >
           {isFollowing ? (
             <Check className="h-3 w-3 mr-1" />
