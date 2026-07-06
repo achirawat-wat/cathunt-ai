@@ -112,9 +112,6 @@ export default function ExplorePage() {
                 )}
               </button>
               
-              <button className="flex h-10 w-10 items-center justify-center rounded-[1rem] bg-zinc-100 text-zinc-900 active:scale-95 transition-transform dark:bg-zinc-800 dark:text-white">
-                  <Search className="h-4 w-4" />
-              </button>
             </div>
           </div>
 
