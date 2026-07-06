@@ -79,6 +79,11 @@ const ENCOUNTER_SELECT = `
   profiles ( id, username, avatar_url )
 `
 
+// 🔄 Pull-to-refresh tuning
+const PULL_THRESHOLD = 70 // ลากเกินระยะนี้แล้วปล่อย = รีเฟรช
+const MAX_PULL = 110      // ลากได้สุดแค่นี้ (กันลากยาวเกิน)
+const PULL_RESISTANCE = 0.5 // ยิ่งค่าน้อย ยิ่งลากหนืด (ฟีลลิ่งแบบแอพ native)
+
 export default function FeedPage() {
   const { user } = useAuthStore()
 
@@ -86,6 +91,12 @@ export default function FeedPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
+
+  // 🔄 Pull-to-refresh state
+  const [pullDistance, setPullDistance] = useState(0)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const isPullingRef = useRef(false)
+  const touchStartYRef = useRef<number | null>(null)
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
@@ -146,6 +157,63 @@ export default function FeedPage() {
     return () => observer.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feeds.length, hasMore])
+
+  // 🔄 Pull-to-refresh: native touch listeners (ต้อง non-passive เพื่อ preventDefault ตอนลาก)
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (isLoading || isRefreshing) return
+      // เริ่มจับได้เฉพาะตอนอยู่บนสุดของฟีดเท่านั้น (เหมือนแอพ native)
+      if (container.scrollTop <= 0) {
+        touchStartYRef.current = e.touches[0].clientY
+        isPullingRef.current = true
+      }
+    }
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isPullingRef.current || touchStartYRef.current === null) return
+
+      const currentY = e.touches[0].clientY
+      const diff = currentY - touchStartYRef.current
+
+      if (diff > 0 && container.scrollTop <= 0) {
+        // กันไม่ให้หน้าจอเลื่อน (bounce) ระหว่างลากลงมา
+        e.preventDefault()
+        const resisted = Math.min(MAX_PULL, diff * PULL_RESISTANCE)
+        setPullDistance(resisted)
+      } else {
+        isPullingRef.current = false
+        touchStartYRef.current = null
+        setPullDistance(0)
+      }
+    }
+
+    const handleTouchEnd = () => {
+      if (!isPullingRef.current) return
+      isPullingRef.current = false
+      touchStartYRef.current = null
+
+      setPullDistance((current) => {
+        if (current >= PULL_THRESHOLD) {
+          triggerRefresh()
+        }
+        return 0
+      })
+    }
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: true })
+    container.addEventListener('touchmove', handleTouchMove, { passive: false })
+    container.addEventListener('touchend', handleTouchEnd)
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart)
+      container.removeEventListener('touchmove', handleTouchMove)
+      container.removeEventListener('touchend', handleTouchEnd)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, isRefreshing])
 
   const registerCardRef = (el: HTMLDivElement | null) => {
     if (el && viewObserverRef.current) viewObserverRef.current.observe(el)
@@ -273,9 +341,37 @@ export default function FeedPage() {
     }
   }
 
+  // 🔄 รีเซ็ต state ภายในทั้งหมดแล้วโหลดฟีดใหม่ตั้งแต่ต้น (เหมือนลากรีเฟรชในแอพโซเชียล)
+  async function triggerRefresh() {
+    if (isRefreshing) return
+    if (navigator.vibrate) navigator.vibrate(30)
+
+    setIsRefreshing(true)
+
+    bufferRef.current = []
+    allFetchedRawRef.current = []
+    offsetRef.current = 0
+    dbExhaustedRef.current = false
+    shownIdsRef.current = new Set()
+    hasMoreRef.current = true
+    setHasMore(true)
+    setFeeds([])
+
+    try {
+      await loadUserContext()
+      await fetchMore()
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
   const scrollToTop = () => {
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
   }
+
+  // 🔄 ความสูง/ความโปร่งใส/การหมุนของตัว indicator ตามระยะที่ลาก
+  const indicatorHeight = isRefreshing ? 56 : pullDistance
+  const indicatorProgress = Math.min(1, indicatorHeight / PULL_THRESHOLD)
 
   return (
     <main className="relative flex h-full w-full flex-col bg-zinc-50 dark:bg-zinc-950 overflow-hidden">
@@ -300,8 +396,31 @@ export default function FeedPage() {
       {/* 📱 Feed Content */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 px-6 pt-[104px] pb-[120px] space-y-6 overflow-y-auto no-scrollbar scroll-smooth"
+        className="flex-1 px-6 pt-[104px] pb-[120px] space-y-6 overflow-y-auto no-scrollbar scroll-smooth overscroll-y-contain"
       >
+
+        {/* 🔄 Pull-to-refresh indicator: ดันเนื้อหาลงตามระยะที่ลาก แล้วสปริงกลับตอนปล่อย */}
+        <div
+          style={{
+            height: indicatorHeight,
+            transition: isPullingRef.current ? 'none' : 'height 0.25s ease',
+          }}
+          className="flex items-center justify-center overflow-hidden -mt-6 mb-0"
+        >
+          <div
+            style={{
+              opacity: indicatorProgress,
+              transform: `scale(${0.6 + indicatorProgress * 0.4}) rotate(${isRefreshing ? 0 : indicatorProgress * 360}deg)`,
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-md border border-zinc-100 dark:bg-zinc-900 dark:border-zinc-800"
+          >
+            {isRefreshing ? (
+              <Loader2 className="h-4 w-4 text-orange-500 animate-spin" />
+            ) : (
+              <Cat className={`h-4 w-4 ${indicatorProgress >= 1 ? 'text-orange-500' : 'text-zinc-400'}`} />
+            )}
+          </div>
+        </div>
 
         {isLoading ? (
           Array(3).fill(0).map((_, i) => (
