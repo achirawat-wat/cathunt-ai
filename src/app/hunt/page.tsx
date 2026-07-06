@@ -48,6 +48,9 @@ export default function HuntPage() {
   const [allCats, setAllCats] = useState<any[]>([])
   const [searchQuery, setSearchQuery] = useState('')
 
+  // 🎯 เก็บ % ความเหมือน (similarity) ของแมวแต่ละตัว key = cat.id, value = similarity (0-1)
+  const [catSimilarities, setCatSimilarities] = useState<Record<string, number>>({})
+
   // ลำดับมุมที่ต้องการให้ถ่าย (หลังจากถ่ายหน้าปกแล้ว)
   const trainingAngles = ["Front", "Left side", "Right side"]
 
@@ -168,6 +171,17 @@ export default function HuntPage() {
             alert(result.error || 'Analysis failed. Try a different angle 😿')
             setStatus(isTrainingStep ? 'training' : 'idle')
             return
+          }
+
+          // 🎯 เก็บ similarity ของทุกตัวที่ backend เทียบมาให้ (ใช้โชว์ % ในลิสต์ "Select a cat")
+          if (Array.isArray(result.matches)) {
+            const simMap: Record<string, number> = {}
+            result.matches.forEach((m: any) => {
+              if (m?.id != null && typeof m.similarity === 'number') {
+                simMap[m.id] = m.similarity
+              }
+            })
+            setCatSimilarities(simMap)
           }
 
           const newCapture = { url: base64Image, blob, vector: result.vector }
@@ -321,13 +335,19 @@ export default function HuntPage() {
     .filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()))
     .map(c => ({
       ...c,
-      distance: location ? getDistance(location.lat, location.lng, c.lat, c.lng) : Infinity
+      distance: location ? getDistance(location.lat, location.lng, c.lat, c.lng) : Infinity,
+      similarity: catSimilarities[c.id] ?? null // 🎯 แนบ % ความเหมือนเข้าไปในแต่ละตัว
     }))
     .sort((a, b) => {
       const isMatchA = matchedCat && a.id === matchedCat.id
       const isMatchB = matchedCat && b.id === matchedCat.id
       if (isMatchA && !isMatchB) return -1
       if (!isMatchA && isMatchB) return 1
+
+      // 🎯 เรียงตาม similarity ก่อน ถ้ามีข้อมูลทั้งคู่
+      if (a.similarity !== null && b.similarity !== null && a.similarity !== b.similarity) {
+        return b.similarity - a.similarity
+      }
 
       if (a.hasInteracted && !b.hasInteracted) return -1
       if (!a.hasInteracted && b.hasInteracted) return 1
@@ -495,10 +515,24 @@ export default function HuntPage() {
                         <span className="font-bold text-zinc-900">{cat.name}</span>
                         {isAIMatch && (
                           <span className="text-[9px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">
-                            🎯 AI suggested{typeof matchedCat?.similarity === 'number' ? ` · ${Math.round(matchedCat.similarity * 100)}%` : ''}
+                            🎯 AI suggested
                           </span>
                         )}
-                        {cat.hasInteracted && !isAIMatch && <span className="text-[9px] bg-green-100 text-green-600 px-2 py-0.5 rounded-full font-bold">⭐ Seen before</span>}
+                        {cat.hasInteracted && !isAIMatch && (
+                          <span className="text-[9px] bg-green-100 text-green-600 px-2 py-0.5 rounded-full font-bold">
+                            ⭐ Seen before
+                          </span>
+                        )}
+                        {typeof cat.similarity === 'number' && (
+                          <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${cat.similarity >= 0.85
+                              ? 'bg-blue-100 text-blue-600'
+                              : cat.similarity >= 0.6
+                                ? 'bg-yellow-100 text-yellow-600'
+                                : 'bg-zinc-100 text-zinc-400'
+                            }`}>
+                            {Math.round(cat.similarity * 100)}% match
+                          </span>
+                        )}
                       </div>
                       <span className="text-xs text-zinc-400 flex items-center mt-1">
                         {cat.area}

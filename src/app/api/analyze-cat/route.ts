@@ -102,19 +102,21 @@ export async function POST(req: Request) {
     // ==========================================
     const { data: matchedCats, error } = await supabase.rpc('match_cats', {
       query_embedding: catVector,
-      match_threshold: 0.85,
-      match_count: 1
+      match_threshold: 0.3,   // ลด threshold เพื่อดึงผลมาเทียบเยอะขึ้น (โชว์ % ให้ทุกตัว)
+      match_count: 50         // ดึงมาให้ครอบคลุมแมวทั้งหมดในระบบ
     })
 
     if (error) throw error
 
+    const bestMatch = matchedCats?.find((c: any) => c.similarity >= 0.85) || null
+
     return NextResponse.json({
       success: true,
-      matchType: matchedCats && matchedCats.length > 0 ? 'known' : 'new',
-      cat: matchedCats?.[0] || null,
+      matchType: bestMatch ? 'known' : 'new',
+      cat: bestMatch,
+      matches: matchedCats || [],   // 👈 ส่งลิสต์ทั้งหมดพร้อม similarity
       vector: catVector
     })
-
   } catch (error: any) {
     console.error('Analyze API Fatal Error:', error)
     return NextResponse.json({ success: false, error: 'ระบบวิเคราะห์ขัดข้องชั่วคราว โปรดลองใหม่อีกครั้ง' }, { status: 503 })
