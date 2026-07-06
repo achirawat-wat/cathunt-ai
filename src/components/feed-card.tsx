@@ -166,13 +166,11 @@ export default function FeedCard({ feed }: FeedCardProps) {
 
     try {
       if (currentlyLiked) {
-        // กรณี "เลิกไลก์"
+        // กรณี "เลิกไลก์" ลบแค่ในตาราง likes (เดี๋ยว Trigger จัดการลบเลขต่อให้ทะลุ RLS)
         await supabase.from('likes').delete().eq('encounter_id', feed.id).eq('user_id', user.id)
-        await supabase.from('encounters').update({ likes_count: likesCount - 1 }).eq('id', feed.id)
       } else {
-        // กรณี "กดไลก์ใหม่"
+        // กรณี "กดไลก์ใหม่" เพิ่มแค่ในตาราง likes
         await supabase.from('likes').insert({ encounter_id: feed.id, user_id: user.id })
-        await supabase.from('encounters').update({ likes_count: likesCount + 1 }).eq('id', feed.id)
       }
     } catch (err) {
       console.error('Error toggling like:', err)
