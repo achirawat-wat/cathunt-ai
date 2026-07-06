@@ -3,7 +3,7 @@
 
 import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Share, MapPin, Heart, Calendar, Clock, Image as ImageIcon, Send, MessageSquare, Loader2, Check, Plus, Cat as CatIcon } from 'lucide-react'
+import { ArrowLeft, Share, MapPin, Heart, Calendar, Clock, Image as ImageIcon, Send, MessageSquare, Loader2, Check, Plus, Cat as CatIcon, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 
@@ -59,13 +59,17 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
   // States สำหรับระบบ Follow
   const [isFollowing, setIsFollowing] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  
+
   // States สำหรับระบบ Notes (สมุดเยี่ยมแมว)
   const [notes, setNotes] = useState<any[]>([])
   const [noteText, setNoteText] = useState('')
   const [isSendingNote, setIsSendingNote] = useState(false)
 
   const [isLoading, setIsLoading] = useState(true)
+
+  // 🖼️ Gallery modal + Lightbox states
+  const [showGallery, setShowGallery] = useState(false)
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
 
   useEffect(() => {
     fetchCatDetails()
@@ -192,7 +196,7 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
     } catch (err) {
       console.error('Error saving note:', err)
       // ถ้าพัง โหลดข้อมูลใหม่เพื่อลบอันจำลองออก
-      fetchNotes() 
+      fetchNotes()
     } finally {
       setIsSendingNote(false)
     }
@@ -216,7 +220,7 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
 
   return (
     <main className="relative flex h-full w-full flex-col bg-zinc-50 dark:bg-zinc-950 overflow-hidden">
-      
+
       {/* 🌟 Floating Top App Bar */}
       <div className="absolute top-6 left-0 right-0 z-[1000] px-6 pointer-events-none">
         <div className="flex h-[72px] items-center justify-between rounded-[2rem] bg-white/90 px-4 backdrop-blur-xl border border-zinc-100 shadow-xl shadow-zinc-200/50 pointer-events-auto dark:bg-zinc-900/90 dark:border-zinc-800 dark:shadow-none">
@@ -234,7 +238,7 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
 
       {/* 📱 Scrollable Content */}
       <div className="flex-1 overflow-y-auto no-scrollbar pt-[104px] pb-32 px-6 flex flex-col space-y-6">
-        
+
         {/* 1. Hero Section */}
         <section className="relative w-full h-[400px] shrink-0 rounded-[2rem] overflow-hidden shadow-sm border border-zinc-100 dark:border-zinc-800 group">
           <div
@@ -242,7 +246,7 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
             style={{ backgroundImage: `url('${coverImage || 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=800'}')` }}
           ></div>
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
-          
+
           {/* 🔧 แก้ overflow: เพิ่ม gap, min-w-0 + truncate ที่ชื่อ, shrink-0 + whitespace-nowrap ที่ปุ่ม */}
           <div className="absolute bottom-0 left-0 w-full p-6 flex items-end justify-between gap-3 pb-8">
             <div className="flex flex-col z-10 min-w-0 flex-1">
@@ -256,7 +260,7 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
                 </span>
               </div>
             </div>
-            
+
             <button
               onClick={handleFollow}
               disabled={isSubmitting}
@@ -316,19 +320,36 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
               <ImageIcon className="h-5 w-5 text-zinc-900 dark:text-white" />
               <h2 className="text-lg font-black tracking-wide text-zinc-900 dark:text-white uppercase">Gallery</h2>
             </div>
+            {encounters.length > 0 && (
+              <button
+                onClick={() => setShowGallery(true)}
+                className="text-[10px] font-bold tracking-widest text-orange-500 uppercase"
+              >
+                View all
+              </button>
+            )}
           </div>
           {encounters.length > 0 ? (
             <div className="grid grid-cols-3 gap-2 h-64">
-              <div className="col-span-2 row-span-2 rounded-[1.2rem] overflow-hidden relative group bg-zinc-100">
+              <div
+                onClick={() => { setLightboxIndex(0); setShowGallery(true) }}
+                className="col-span-2 row-span-2 rounded-[1.2rem] overflow-hidden relative group bg-zinc-100 cursor-pointer active:scale-[0.98] transition-transform"
+              >
                 <img src={encounters[0].image_url} className="w-full h-full object-cover" alt="Gallery 1" />
               </div>
               {encounters[1] && (
-                <div className="rounded-[1.2rem] overflow-hidden bg-zinc-100">
+                <div
+                  onClick={() => { setLightboxIndex(1); setShowGallery(true) }}
+                  className="rounded-[1.2rem] overflow-hidden bg-zinc-100 cursor-pointer active:scale-[0.98] transition-transform"
+                >
                   <img src={encounters[1].image_url} className="w-full h-full object-cover" alt="Gallery 2" />
                 </div>
               )}
               {encounters.length > 2 && (
-                <div className="rounded-[1.2rem] overflow-hidden bg-zinc-100 flex items-center justify-center flex-col cursor-pointer active:scale-95 transition-transform dark:bg-zinc-800">
+                <div
+                  onClick={() => setShowGallery(true)}
+                  className="rounded-[1.2rem] overflow-hidden bg-zinc-100 flex items-center justify-center flex-col cursor-pointer active:scale-95 transition-transform dark:bg-zinc-800"
+                >
                   <span className="text-xl font-black text-zinc-900 dark:text-white">+{encounters.length - 2}</span>
                   <span className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase">MORE</span>
                 </div>
@@ -347,7 +368,7 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
             <MessageSquare className="h-5 w-5 text-zinc-900 dark:text-white" />
             <h2 className="text-lg font-black tracking-wide text-zinc-900 dark:text-white uppercase">Cat Notes</h2>
           </div>
-          
+
           {/* ช่องกรอก Note */}
           <form onSubmit={handleSendNote} className="flex space-x-3 mb-6">
             <Avatar src={profile?.avatar_url} alt="Me" />
@@ -359,7 +380,7 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
                 placeholder="Leave a note about this cat..."
                 className="w-full bg-zinc-50 border-none rounded-[1.2rem] py-3 pl-4 pr-12 text-sm font-medium text-zinc-900 placeholder:text-zinc-400 focus:ring-2 focus:ring-orange-500/50 dark:bg-zinc-800 dark:text-white"
               />
-              <button 
+              <button
                 type="submit"
                 disabled={!noteText.trim() || isSendingNote}
                 className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-zinc-900 text-white flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 disabled:scale-90 dark:bg-white dark:text-zinc-900"
@@ -397,6 +418,90 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
         </section>
 
       </div>
+
+      {/* 🖼️ Gallery Modal: Grid ของรูปทั้งหมด */}
+      {showGallery && lightboxIndex === null && (
+        <div className="absolute inset-0 z-[2000] bg-black/60 backdrop-blur-sm flex items-end animate-in fade-in duration-200">
+          <div className="w-full max-h-[85vh] bg-white dark:bg-zinc-900 rounded-t-[2rem] p-6 flex flex-col animate-in slide-in-from-bottom duration-300">
+            <div className="flex justify-between items-center mb-4 shrink-0">
+              <h3 className="font-black text-xl text-zinc-900 dark:text-white">
+                All Sightings <span className="text-orange-500">({encounters.length})</span>
+              </h3>
+              <button
+                onClick={() => setShowGallery(false)}
+                className="w-9 h-9 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center active:scale-95"
+              >
+                <X className="w-5 h-5 text-zinc-600 dark:text-zinc-300" />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2 overflow-y-auto no-scrollbar pb-8">
+              {encounters.map((enc, i) => (
+                <div
+                  key={i}
+                  onClick={() => setLightboxIndex(i)}
+                  className="aspect-square rounded-[1rem] overflow-hidden bg-zinc-100 dark:bg-zinc-800 cursor-pointer active:scale-95 transition-transform"
+                >
+                  <img src={enc.image_url} className="w-full h-full object-cover" alt={`Sighting ${i + 1}`} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🔍 Lightbox: ดูรูปเต็มจอ เลื่อนซ้าย-ขวาได้ */}
+      {showGallery && lightboxIndex !== null && (
+        <div className="absolute inset-0 z-[2100] bg-black flex flex-col animate-in fade-in duration-150">
+          <div className="flex justify-between items-center p-6 shrink-0">
+            <span className="text-white/70 text-xs font-bold tracking-widest uppercase">
+              {lightboxIndex + 1} / {encounters.length}
+            </span>
+            <button
+              onClick={() => setLightboxIndex(null)}
+              className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center active:scale-95"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </div>
+
+          <div className="flex-1 relative flex items-center justify-center px-4">
+            <img
+              src={encounters[lightboxIndex].image_url}
+              alt={`Sighting ${lightboxIndex + 1}`}
+              className="max-w-full max-h-full object-contain rounded-xl"
+            />
+
+            {lightboxIndex > 0 && (
+              <button
+                onClick={() => setLightboxIndex(lightboxIndex - 1)}
+                className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center active:scale-95"
+              >
+                <ChevronLeft className="w-6 h-6 text-white" />
+              </button>
+            )}
+            {lightboxIndex < encounters.length - 1 && (
+              <button
+                onClick={() => setLightboxIndex(lightboxIndex + 1)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center active:scale-95"
+              >
+                <ChevronRight className="w-6 h-6 text-white" />
+              </button>
+            )}
+          </div>
+
+          {/* คำบรรยาย + วันที่ ถ้ามี */}
+          {(encounters[lightboxIndex].description || encounters[lightboxIndex].created_at) && (
+            <div className="p-6 pt-2 shrink-0 text-center">
+              {encounters[lightboxIndex].description && (
+                <p className="text-white text-sm font-medium mb-1">{encounters[lightboxIndex].description}</p>
+              )}
+              <p className="text-white/40 text-[10px] font-bold tracking-widest uppercase">
+                {new Date(encounters[lightboxIndex].created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </main>
   )
 }

@@ -5,13 +5,13 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
-import { LogOut, Compass, Heart, Camera, Loader2, Cat, MessageSquarePlus, X, Check } from 'lucide-react'
+import { LogOut, Compass, Heart, Camera, Loader2, Cat, MessageSquarePlus, X, Check, Users } from 'lucide-react'
 
 function timeAgo(dateString: string) {
   const date = new Date(dateString)
   const now = new Date()
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
-  
+
   if (diffInSeconds < 60) return `Just now`
   if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`
   if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`
@@ -27,11 +27,49 @@ const FEEDBACK_PRESETS = [
   { emoji: '🙏', label: 'Other' },
 ]
 
+// 📸 Max items shown in the grid before collapsing behind "View All" (5 x 2)
+const MAX_GRID_ITEMS = 10
+
+// 🃏 Reusable post/cat card used in both the main grid and the "View All" modal
+function PostCard({ post, onClick }: { post: any; onClick?: () => void }) {
+  return (
+    <Link
+      href={`/cats/${post.catId}`}
+      onClick={onClick}
+      className="bg-white rounded-[1.5rem] overflow-hidden shadow-sm border border-zinc-100 group cursor-pointer active:scale-95 transition-all block dark:bg-zinc-900 dark:border-zinc-800"
+    >
+      <div className="aspect-square relative overflow-hidden bg-zinc-100 dark:bg-zinc-800">
+        {post.img ? (
+          <img
+            src={post.img}
+            alt={post.title}
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-zinc-300 dark:text-zinc-600">
+            <Cat className="h-8 w-8" />
+          </div>
+        )}
+        {post.likes > 0 && (
+          <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-md px-2 py-1 rounded-full shadow-sm flex items-center space-x-1 dark:bg-zinc-900/90">
+            <Heart className="h-2.5 w-2.5 fill-red-500 text-red-500" />
+            <span className="text-[9px] font-black text-zinc-900 dark:text-white">{post.likes}</span>
+          </div>
+        )}
+      </div>
+      <div className="p-3">
+        <p className="text-[11px] font-black tracking-wide text-zinc-900 truncate dark:text-white uppercase">{post.title}</p>
+        <p className="text-[9px] font-bold tracking-widest text-zinc-400 mt-1 uppercase truncate">{post.time}</p>
+      </div>
+    </Link>
+  )
+}
+
 export default function ProfilePage() {
   // 🚀 setProfile from Zustand, used to update state in real time after avatar upload
   const { user, profile: globalProfile, loading: authLoading, setProfile } = useAuthStore()
-  
-  const [activeTab, setActiveTab] = useState<'posts' | 'favorites'>('posts')
+
+  const [activeTab, setActiveTab] = useState<'posts' | 'favorites' | 'following'>('posts')
   const [myPosts, setMyPosts] = useState<any[]>([])
   const [stats, setStats] = useState({ discovered: 0, total: 0 })
   const [isFetchingPosts, setIsFetchingPosts] = useState(true)
@@ -40,7 +78,12 @@ export default function ProfilePage() {
   const [likedPosts, setLikedPosts] = useState<any[]>([])
   const [isFetchingLikes, setIsFetchingLikes] = useState(false)
   const [likesLoaded, setLikesLoaded] = useState(false)
-  
+
+  // 🐾 Following cats — โหลดแบบ lazy ตอนกดแท็บครั้งแรกเช่นกัน
+  const [followingCats, setFollowingCats] = useState<any[]>([])
+  const [isFetchingFollowing, setIsFetchingFollowing] = useState(false)
+  const [followingLoaded, setFollowingLoaded] = useState(false)
+
   const [avatarError, setAvatarError] = useState(false)
   // 📸 State and ref for the avatar upload flow
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
@@ -53,6 +96,9 @@ export default function ProfilePage() {
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false)
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false)
   const [feedbackError, setFeedbackError] = useState('')
+
+  // 🔳 "View All" modal for whichever tab is currently active
+  const [showAllModal, setShowAllModal] = useState(false)
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -67,6 +113,19 @@ export default function ProfilePage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, user])
+
+  // 🐾 โหลด following cats เมื่อกดแท็บ "Following" ครั้งแรกเท่านั้น
+  useEffect(() => {
+    if (activeTab === 'following' && !followingLoaded && user) {
+      fetchFollowingCats(user.id)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, user])
+
+  // 🔳 ปิด "View All" modal ทุกครั้งที่สลับแท็บ
+  useEffect(() => {
+    setShowAllModal(false)
+  }, [activeTab])
 
   const fetchUserPosts = async (userId: string) => {
     try {
@@ -98,12 +157,14 @@ export default function ProfilePage() {
             likes: post.likes_count || 0
           }
         })
-        
+
         setMyPosts(formattedPosts)
-        
-        const catsFoundCount = globalProfile?.cats_found || 0
+
+        // 🐈 "Cats Discovered" = จำนวนแมวที่ไม่ซ้ำกัน (นับตาม catId) ไม่ใช่จำนวนรูป
+        // "Total Sightings" = จำนวนรูปทั้งหมดที่เคยถ่าย (นับทุกโพสต์ รวมแมวตัวเดิมที่เจอซ้ำ)
+        const uniqueCatIds = new Set(formattedPosts.map(p => p.catId).filter(Boolean))
         setStats({
-          discovered: catsFoundCount || new Set(formattedPosts.map(p => p.catId).filter(Boolean)).size,
+          discovered: uniqueCatIds.size,
           total: formattedPosts.length
         })
       }
@@ -164,6 +225,59 @@ export default function ProfilePage() {
     }
   }
 
+  // 🐾 ดึงรายชื่อแมวที่เรา follow อยู่ พร้อมรูป cover ของแต่ละตัว
+  const fetchFollowingCats = async (userId: string) => {
+    try {
+      setIsFetchingFollowing(true)
+      const { data: followsData, error: followsError } = await supabase
+        .from('follows')
+        .select(`
+          created_at,
+          cats ( id, name, area, first_seen, last_seen )
+        `)
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+
+      if (followsError) throw followsError
+
+      const catsList = (followsData || [])
+        .map((row: any) => (Array.isArray(row.cats) ? row.cats[0] : row.cats))
+        .filter(Boolean)
+
+      const catIds = catsList.map((c: any) => c.id)
+
+      // 🖼️ ดึงรูปล่าสุด (ไม่ใช่ training data) มาใช้เป็น cover ของแต่ละแมว
+      let coverMap: Record<string, string> = {}
+      if (catIds.length > 0) {
+        const { data: encData } = await supabase
+          .from('encounters')
+          .select('cat_id, image_url, created_at')
+          .in('cat_id', catIds)
+          .eq('is_training', false)
+          .order('created_at', { ascending: false })
+
+        encData?.forEach((enc: any) => {
+          if (!coverMap[enc.cat_id]) coverMap[enc.cat_id] = enc.image_url
+        })
+      }
+
+      const formatted = catsList.map((cat: any) => ({
+        id: cat.id,
+        catId: cat.id,
+        title: cat.name,
+        time: cat.area || 'Unknown Area',
+        img: coverMap[cat.id] || null,
+      }))
+
+      setFollowingCats(formatted)
+    } catch (err) {
+      console.error('Error fetching following cats:', err)
+    } finally {
+      setIsFetchingFollowing(false)
+      setFollowingLoaded(true)
+    }
+  }
+
   // 🚀 Handles profile avatar upload
 const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
@@ -180,7 +294,7 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
       // 1. Get the old filename ready to delete (if avatar_url exists)
       const oldAvatarUrl = globalProfile?.avatar_url
       let oldFilePath = null
-      
+
       if (oldAvatarUrl) {
         // Extract filename from URL (assumes URL is in the form .../avatars/filename)
         const parts = oldAvatarUrl.split('/')
@@ -282,25 +396,46 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
     }
   }
 
-  const catsFoundCount = globalProfile?.cats_found || 0
+  const catsFoundCount = stats.discovered
   const currentLevel = Math.floor(catsFoundCount / 5) + 1
-  
+
   const displayProfile = {
     name: globalProfile?.username || user?.email?.split('@')[0] || 'Unknown',
     avatar: globalProfile?.avatar_url || null,
     level: `Explorer Level ${currentLevel}`
   }
 
-  // ❤️ ใช้ likedPosts ตรงๆ แทนการ filter จาก myPosts
-  const displayPosts = activeTab === 'posts' ? myPosts : likedPosts
+  // 🗂️ เลือกชุดข้อมูลตามแท็บที่เลือกอยู่
+  const displayPosts =
+    activeTab === 'posts' ? myPosts :
+    activeTab === 'favorites' ? likedPosts :
+    followingCats
+
+  // 📸 จำกัดจำนวนที่โชว์ในกริดหลักไว้ที่ 5x2 = 10 ที่เหลือไปอยู่ใน "View All" modal
+  const visiblePosts = displayPosts.slice(0, MAX_GRID_ITEMS)
+  const hasMorePosts = displayPosts.length > MAX_GRID_ITEMS
 
   const isPageLoading = authLoading || isFetchingPosts
-  const isTabLoading = activeTab === 'posts' ? isPageLoading : (isPageLoading || isFetchingLikes)
+  const isTabLoading =
+    activeTab === 'posts' ? isPageLoading :
+    activeTab === 'favorites' ? (isPageLoading || isFetchingLikes) :
+    (isPageLoading || isFetchingFollowing)
+
   const showRealAvatar = displayProfile.avatar && !avatarError && !displayProfile.avatar.includes('unsplash.com/photo-1599566')
+
+  const emptyStateText =
+    activeTab === 'posts' ? 'No posts here yet.' :
+    activeTab === 'favorites' ? 'No liked cats yet. Go find some! 🐾' :
+    'Not following any cats yet.'
+
+  const viewAllTitle =
+    activeTab === 'posts' ? 'All Posts' :
+    activeTab === 'favorites' ? 'All Likes' :
+    'Following'
 
   return (
     <main className="relative flex h-full w-full flex-col bg-zinc-50 dark:bg-zinc-950 overflow-hidden">
-      
+
       <div className="absolute top-6 left-0 right-0 z-[1000] px-6 pointer-events-none">
         <div className="flex h-[72px] items-center justify-between rounded-[2rem] bg-white/90 px-6 backdrop-blur-xl border border-zinc-100 shadow-xl shadow-zinc-200/50 pointer-events-auto dark:bg-zinc-900/90 dark:border-zinc-800 dark:shadow-none">
           <div className="flex items-center space-x-3">
@@ -308,10 +443,11 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
               Profile<span className="text-orange-500">.</span>
             </h1>
           </div>
-          
+
+          {/* 🟠 ปุ่ม feedback สีส้ม ให้เด่นและดูเป็น action ที่กดได้ */}
           <button
             onClick={openFeedbackModal}
-            className="relative flex h-10 w-10 items-center justify-center rounded-[1rem] bg-zinc-100 text-zinc-900 active:scale-95 transition-transform hover:bg-zinc-200 dark:bg-zinc-800 dark:text-white dark:hover:bg-zinc-700"
+            className="relative flex h-10 w-10 items-center justify-center rounded-[1rem] bg-orange-50 text-orange-600 active:scale-95 transition-transform hover:bg-orange-100 dark:bg-orange-500/10 dark:text-orange-500 dark:hover:bg-orange-500/20"
           >
             <MessageSquarePlus className="h-4 w-4" />
           </button>
@@ -319,11 +455,11 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
       </div>
 
       <div className="flex-1 overflow-y-auto no-scrollbar pt-[104px] pb-32 px-6 flex flex-col space-y-6">
-        
+
         {/* 1. Profile Header Bento */}
         <section className="grid grid-cols-1 gap-4">
           <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-zinc-100 flex flex-col items-center justify-center text-center dark:bg-zinc-900 dark:border-zinc-800 relative">
-            
+
             {authLoading && (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 rounded-[2rem] backdrop-blur-sm dark:bg-zinc-900/80">
                 <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
@@ -331,8 +467,8 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
             )}
 
             {/* Hidden input for file upload */}
-            <input 
-              type="file" 
+            <input
+              type="file"
               accept="image/*"
               className="hidden"
               ref={fileInputRef}
@@ -340,23 +476,23 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
             />
 
             {/* 📸 Profile avatar frame, click to change */}
-            <div 
+            <div
               onClick={() => !isUploadingAvatar && fileInputRef.current?.click()}
               className="relative w-24 h-24 rounded-[1.5rem] overflow-hidden mb-4 shadow-sm border-[3px] border-orange-50 dark:border-orange-500/20 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center group cursor-pointer transition-transform active:scale-95"
             >
               {showRealAvatar ? (
-                <img 
+                <img
                   src={displayProfile.avatar}
-                  alt={displayProfile.name} 
+                  alt={displayProfile.name}
                   className="w-full h-full object-cover"
-                  onError={() => setAvatarError(true)} 
+                  onError={() => setAvatarError(true)}
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500">
                   <Cat className="h-10 w-10 opacity-80" />
                 </div>
               )}
-              
+
               {/* Hover & Uploading State */}
               <div className={`absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center transition-opacity ${isUploadingAvatar ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                 {isUploadingAvatar ? (
@@ -386,7 +522,7 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
                 <p className="text-[10px] font-bold tracking-widest uppercase opacity-70 mt-1">Cats Discovered</p>
               </div>
             </div>
-            
+
             <div className="bg-orange-50 text-orange-600 rounded-[1.5rem] p-5 flex flex-col justify-between shadow-sm border border-orange-100 dark:bg-orange-500/10 dark:border-orange-500/20 dark:text-orange-500">
               <Camera className="h-7 w-7 mb-3" />
               <div>
@@ -401,23 +537,32 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
 
         {/* 2. Tabs & Grid Area */}
         <section className="flex flex-col space-y-4 pt-4">
-          <div className="flex space-x-4 border-b border-zinc-100 dark:border-zinc-800">
-            <button 
+          <div className="flex space-x-4 border-b border-zinc-100 dark:border-zinc-800 overflow-x-auto no-scrollbar">
+            <button
               onClick={() => setActiveTab('posts')}
-              className={`pb-3 font-black tracking-wide uppercase transition-colors text-sm ${
+              className={`pb-3 font-black tracking-wide uppercase transition-colors text-sm whitespace-nowrap ${
                 activeTab === 'posts' ? 'text-zinc-900 border-b-2 border-zinc-900 dark:text-white dark:border-white' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
               }`}
             >
               My Posts
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab('favorites')}
-              className={`pb-3 font-black tracking-wide uppercase transition-colors text-sm flex items-center space-x-1 ${
+              className={`pb-3 font-black tracking-wide uppercase transition-colors text-sm flex items-center space-x-1 whitespace-nowrap ${
                 activeTab === 'favorites' ? 'text-zinc-900 border-b-2 border-zinc-900 dark:text-white dark:border-white' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
               }`}
             >
               <span>Likes</span>
               {activeTab === 'favorites' && <Heart className="h-3 w-3 fill-zinc-900 text-zinc-900 dark:fill-white dark:text-white ml-1" />}
+            </button>
+            <button
+              onClick={() => setActiveTab('following')}
+              className={`pb-3 font-black tracking-wide uppercase transition-colors text-sm flex items-center space-x-1 whitespace-nowrap ${
+                activeTab === 'following' ? 'text-zinc-900 border-b-2 border-zinc-900 dark:text-white dark:border-white' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+              }`}
+            >
+              <span>Following</span>
+              {activeTab === 'following' && <Users className="h-3 w-3 text-zinc-900 dark:text-white ml-1" />}
             </button>
           </div>
 
@@ -434,33 +579,26 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
                 </Link>
               )}
 
-              {displayPosts.map((post) => (
-                <Link href={`/cats/${post.catId}`} key={post.id} className="bg-white rounded-[1.5rem] overflow-hidden shadow-sm border border-zinc-100 group cursor-pointer active:scale-95 transition-all block dark:bg-zinc-900 dark:border-zinc-800">
-                  <div className="aspect-square relative overflow-hidden bg-zinc-100 dark:bg-zinc-800">
-                    <img 
-                      src={post.img} 
-                      alt={post.title}
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    />
-                    {post.likes > 0 && (
-                      <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-md px-2 py-1 rounded-full shadow-sm flex items-center space-x-1 dark:bg-zinc-900/90">
-                        <Heart className="h-2.5 w-2.5 fill-red-500 text-red-500" />
-                        <span className="text-[9px] font-black text-zinc-900 dark:text-white">{post.likes}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-3">
-                    <p className="text-[11px] font-black tracking-wide text-zinc-900 truncate dark:text-white uppercase">{post.title}</p>
-                    <p className="text-[9px] font-bold tracking-widest text-zinc-400 mt-1 uppercase">{post.time}</p>
-                  </div>
-                </Link>
+              {visiblePosts.map((post) => (
+                <PostCard post={post} key={post.id} />
               ))}
 
               {displayPosts.length === 0 && (
                 <div className={`flex flex-col items-center justify-center aspect-[4/5] text-center px-4 ${activeTab === 'posts' ? '' : 'col-span-2'}`}>
                   <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
-                    {activeTab === 'posts' ? 'No posts here yet.' : 'No liked cats yet. Go find some! 🐾'}
+                    {emptyStateText}
                   </p>
+                </div>
+              )}
+
+              {hasMorePosts && (
+                <div className="col-span-2 flex justify-center pt-2">
+                  <button
+                    onClick={() => setShowAllModal(true)}
+                    className="text-[10px] font-black tracking-widest text-orange-500 uppercase underline underline-offset-4"
+                  >
+                    View all {displayPosts.length}
+                  </button>
                 </div>
               )}
             </div>
@@ -469,7 +607,7 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
 
         {/* Log Out Button */}
         <div className="pt-6 pb-2 flex justify-center">
-          <button 
+          <button
             onClick={handleLogout}
             className="bg-red-50 text-red-600 px-6 py-3 rounded-[1rem] font-black text-[10px] tracking-widest uppercase flex items-center justify-center space-x-2 active:scale-95 transition-transform hover:bg-red-100 dark:bg-red-500/10 dark:text-red-500 dark:hover:bg-red-500/20"
           >
@@ -479,6 +617,30 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
         </div>
 
       </div>
+
+      {/* 🔳 "View All" Modal: โชว์ทั้งหมดของแท็บที่เลือกอยู่ ไม่ต้องเลื่อนหน้ายาว */}
+      {showAllModal && (
+        <div className="fixed inset-0 z-[2000] bg-black/60 backdrop-blur-sm flex items-end animate-in fade-in duration-200">
+          <div className="w-full max-h-[85vh] bg-white dark:bg-zinc-900 rounded-t-[2rem] p-6 flex flex-col animate-in slide-in-from-bottom duration-300">
+            <div className="flex justify-between items-center mb-4 shrink-0">
+              <h3 className="font-black text-xl text-zinc-900 dark:text-white uppercase">
+                {viewAllTitle} <span className="text-orange-500">({displayPosts.length})</span>
+              </h3>
+              <button
+                onClick={() => setShowAllModal(false)}
+                className="w-9 h-9 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center active:scale-95"
+              >
+                <X className="w-5 h-5 text-zinc-600 dark:text-zinc-300" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-4 overflow-y-auto no-scrollbar pb-8">
+              {displayPosts.map((post) => (
+                <PostCard post={post} key={post.id} onClick={() => setShowAllModal(false)} />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 💬 Feedback Modal */}
       {showFeedbackModal && (
@@ -491,7 +653,7 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
 
           {/* Panel */}
           <div className="relative w-full sm:max-w-md bg-white dark:bg-zinc-900 rounded-t-[2rem] sm:rounded-[2rem] p-6 pb-8 sm:pb-6 shadow-2xl animate-in slide-in-from-bottom duration-200 max-h-[90vh] overflow-y-auto">
-            
+
             {feedbackSubmitted ? (
               /* Success State */
               <div className="flex flex-col items-center justify-center py-10 text-center">

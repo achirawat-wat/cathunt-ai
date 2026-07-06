@@ -7,18 +7,19 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useRouter } from 'next/navigation'
-import { Cat, ArrowLeft, Loader2, CheckCircle2, Sparkles } from 'lucide-react'
+import { Cat, ArrowLeft, Loader2, CheckCircle2, Sparkles, KeyRound } from 'lucide-react'
 import Link from 'next/link'
 
 export default function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('') // 🔐 ใช้เฉพาะตอนสมัคร
   const [isSignUp, setIsSignUp] = useState(false)
-  
+
   const [loading, setLoading] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
-  
+
   const router = useRouter()
 
   // 🧹 ฟังก์ชันจัดการ Username สดๆ ตอนพิมพ์ (ตัดช่องว่าง, พิมพ์เล็ก, ลบอักขระพิเศษ)
@@ -39,6 +40,13 @@ export default function LoginPage() {
       return
     }
 
+    // 🔐 เช็ค Confirm Password เฉพาะตอนสมัครสมาชิก
+    if (isSignUp && password !== confirmPassword) {
+      setErrorMsg('Passwords do not match.')
+      setLoading(false)
+      return
+    }
+
     // 🔗 สร้าง Email ปลอมเพื่อให้ตรงกับ Trigger ใน DB (เช่น millbcc@cathunt.local)
     const fakeEmail = `${username}@cathunt.local`
 
@@ -50,9 +58,9 @@ export default function LoginPage() {
           password,
         })
         if (error) throw error
-        
+
         triggerSuccess('/map') // สมัครเสร็จ ไปหน้าสำรวจแมว
-        
+
       } else {
         // 2. 🔑 เข้าสู่ระบบปกติ
         const { error } = await supabase.auth.signInWithPassword({
@@ -60,7 +68,7 @@ export default function LoginPage() {
           password,
         })
         if (error) throw error
-        
+
         triggerSuccess('/feed') // ล็อกอินเสร็จ ไปหน้า Feed
       }
     } catch (error: any) {
@@ -84,16 +92,48 @@ export default function LoginPage() {
     }, 1000) // หน่วงเวลา 1 วินาทีให้เห็นเครื่องหมายถูก
   }
 
+  // 🔁 สลับโหมด login/signup พร้อมล้างค่าฟอร์มทั้งหมด
+  const toggleMode = () => {
+    setIsSignUp(!isSignUp)
+    setErrorMsg('')
+    setUsername('')
+    setPassword('')
+    setConfirmPassword('')
+  }
+
+  // 🎨 ตัวแปรควบคุมธีมสีตามโหมด: Login = zinc (นิ่ง, น่าเชื่อถือ), Signup = orange (สดใส, ตื่นเต้น)
+  const accent = isSignUp
+    ? {
+        iconBg: 'bg-orange-500 text-white dark:bg-orange-500 dark:text-white',
+        iconRotate: '-rotate-3 hover:-rotate-6',
+        ring: 'focus-visible:ring-orange-500/50',
+        button: 'bg-orange-500 hover:bg-orange-600 text-white shadow-orange-500/30',
+        blobA: 'bg-orange-500/15',
+        blobB: 'bg-orange-300/10 dark:bg-orange-500/10',
+        badge: 'bg-orange-500 text-white',
+        toggleHover: 'hover:text-orange-500 dark:hover:text-orange-500',
+      }
+    : {
+        iconBg: 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900',
+        iconRotate: 'rotate-3 hover:rotate-6',
+        ring: 'focus-visible:ring-zinc-900/30 dark:focus-visible:ring-white/30',
+        button: 'bg-zinc-900 hover:bg-zinc-800 text-white shadow-zinc-900/20 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200 dark:shadow-white/10',
+        blobA: 'bg-zinc-400/10 dark:bg-zinc-700/20',
+        blobB: 'bg-orange-500/10',
+        badge: 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900',
+        toggleHover: 'hover:text-orange-500 dark:hover:text-orange-500',
+      }
+
   return (
     <div className="flex h-full flex-col bg-zinc-50 px-6 py-4 dark:bg-zinc-950 relative overflow-hidden">
-      
-      {/* 🌟 Background Decorations (วงกลมเบลอๆ พื้นหลัง) */}
-      <div className="absolute -top-32 -left-32 w-64 h-64 bg-orange-500/10 rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute top-1/2 -right-32 w-64 h-64 bg-zinc-400/10 rounded-full blur-3xl pointer-events-none dark:bg-zinc-800/20"></div>
+
+      {/* 🌟 Background Decorations (วงกลมเบลอๆ พื้นหลัง, สลับสีตามโหมด) */}
+      <div className={`absolute -top-32 -left-32 w-64 h-64 rounded-full blur-3xl pointer-events-none transition-colors duration-500 ${accent.blobA}`}></div>
+      <div className={`absolute top-1/2 -right-32 w-64 h-64 rounded-full blur-3xl pointer-events-none transition-colors duration-500 ${accent.blobB}`}></div>
 
       {/* Back Button */}
       <div className="absolute top-6 left-6 z-10">
-        <Link 
+        <Link
           href="/"
           className="flex h-12 w-12 items-center justify-center rounded-[1.2rem] bg-white text-zinc-900 shadow-sm border border-zinc-100 active:scale-95 transition-transform dark:bg-zinc-900 dark:border-zinc-800 dark:text-white"
         >
@@ -101,12 +141,19 @@ export default function LoginPage() {
         </Link>
       </div>
 
+      {/* 🏷️ Mode badge มุมขวาบน บอกโหมดปัจจุบันชัดๆ */}
+      <div className="absolute top-6 right-6 z-10">
+        <span className={`px-3 py-1.5 rounded-full text-[10px] font-black tracking-widest uppercase transition-colors duration-300 ${accent.badge}`}>
+          {isSignUp ? 'New Hunter' : 'Sign In'}
+        </span>
+      </div>
+
       <div className="flex flex-1 flex-col justify-center w-full max-w-sm mx-auto z-10 pt-10">
-        
+
         {/* Header */}
         <div className="mb-10 flex flex-col items-center space-y-5 text-center">
           <div className="relative">
-            <div className="flex h-20 w-20 items-center justify-center rounded-[1.5rem] bg-zinc-900 text-white transform rotate-3 dark:bg-white dark:text-zinc-900 shadow-2xl shadow-zinc-900/20 dark:shadow-white/10 transition-transform hover:rotate-6">
+            <div className={`flex h-20 w-20 items-center justify-center rounded-[1.5rem] transform transition-all duration-300 shadow-2xl ${accent.iconBg} ${accent.iconRotate}`}>
               <Cat className="h-10 w-10" />
             </div>
             {isSignUp && (
@@ -115,10 +162,11 @@ export default function LoginPage() {
               </div>
             )}
           </div>
-          
+
           <div className="space-y-1.5">
             <h1 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white">
-              {isSignUp ? 'Join the Hunt' : 'Welcome Back'}<span className="text-orange-500">.</span>
+              {isSignUp ? 'Join the Hunt' : 'Welcome Back'}
+              <span className={isSignUp ? 'text-orange-500' : 'text-orange-500'}>.</span>
             </h1>
             <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
               {isSignUp ? 'Create your unique hunter ID.' : 'Sign in to continue exploring.'}
@@ -143,11 +191,11 @@ export default function LoginPage() {
                 required
                 minLength={3}
                 disabled={loading || isSuccess}
-                className="h-14 rounded-[1.2rem] bg-white border border-zinc-100 shadow-sm focus-visible:ring-2 focus-visible:ring-orange-500/50 dark:bg-zinc-900 dark:border-zinc-800 dark:text-white text-base pl-9 transition-all font-bold"
+                className={`h-14 rounded-[1.2rem] bg-white border border-zinc-100 shadow-sm focus-visible:ring-2 dark:bg-zinc-900 dark:border-zinc-800 dark:text-white text-base pl-9 transition-all font-bold ${accent.ring}`}
               />
             </div>
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="password" className="text-[11px] font-black tracking-widest uppercase text-zinc-400 pl-1">
               Passcode
@@ -161,9 +209,37 @@ export default function LoginPage() {
               minLength={6}
               disabled={loading || isSuccess}
               placeholder="••••••••"
-              className="h-14 rounded-[1.2rem] bg-white border border-zinc-100 shadow-sm focus-visible:ring-2 focus-visible:ring-orange-500/50 dark:bg-zinc-900 dark:border-zinc-800 dark:text-white text-base px-4 transition-all"
+              className={`h-14 rounded-[1.2rem] bg-white border border-zinc-100 shadow-sm focus-visible:ring-2 dark:bg-zinc-900 dark:border-zinc-800 dark:text-white text-base px-4 transition-all ${accent.ring}`}
             />
           </div>
+
+          {/* 🔐 Confirm Password: โผล่มาเฉพาะตอนสมัครสมาชิก */}
+          {isSignUp && (
+            <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+              <Label htmlFor="confirmPassword" className="text-[11px] font-black tracking-widest uppercase text-zinc-400 pl-1 flex items-center space-x-1.5">
+                <KeyRound className="h-3 w-3" />
+                <span>Confirm Passcode</span>
+              </Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                minLength={6}
+                disabled={loading || isSuccess}
+                placeholder="••••••••"
+                className={`h-14 rounded-[1.2rem] bg-white border shadow-sm focus-visible:ring-2 dark:bg-zinc-900 dark:text-white text-base px-4 transition-all ${accent.ring} ${
+                  confirmPassword.length > 0 && confirmPassword !== password
+                    ? 'border-red-300 dark:border-red-500/50'
+                    : 'border-zinc-100 dark:border-zinc-800'
+                }`}
+              />
+              {confirmPassword.length > 0 && confirmPassword !== password && (
+                <p className="text-[11px] text-red-500 font-bold pl-1">Passwords don't match yet</p>
+              )}
+            </div>
+          )}
 
           {/* Error Message */}
           {errorMsg && (
@@ -173,14 +249,20 @@ export default function LoginPage() {
           )}
 
           {/* Submit Button (Dynamic State) */}
-          <Button 
-            type="submit" 
-            disabled={loading || isSuccess || !username || !password}
-            className={`w-full h-14 mt-4 rounded-[1.2rem] font-black tracking-widest text-[11px] uppercase transition-all duration-300 shadow-lg ${
-              isSuccess 
-                ? 'bg-green-500 hover:bg-green-600 text-white shadow-green-500/30 scale-[0.98]' 
-                : 'bg-zinc-900 hover:bg-zinc-800 text-white shadow-zinc-900/20 active:scale-[0.98] dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200 dark:shadow-white/10'
-            }`} 
+          <Button
+            type="submit"
+            disabled={
+              loading ||
+              isSuccess ||
+              !username ||
+              !password ||
+              (isSignUp && (!confirmPassword || password !== confirmPassword))
+            }
+            className={`w-full h-14 mt-4 rounded-[1.2rem] font-black tracking-widest text-[11px] uppercase transition-all duration-300 shadow-lg active:scale-[0.98] ${
+              isSuccess
+                ? 'bg-green-500 hover:bg-green-600 text-white shadow-green-500/30 scale-[0.98]'
+                : accent.button
+            }`}
           >
             {isSuccess ? (
               <div className="flex items-center justify-center space-x-2 animate-in zoom-in">
@@ -206,13 +288,8 @@ export default function LoginPage() {
           <button
             type="button"
             disabled={loading || isSuccess}
-            onClick={() => {
-              setIsSignUp(!isSignUp)
-              setErrorMsg('')
-              setUsername('')
-              setPassword('')
-            }}
-            className="font-black text-zinc-900 active:scale-95 inline-block transition-transform dark:text-white ml-1 hover:text-orange-500 dark:hover:text-orange-500 disabled:opacity-50"
+            onClick={toggleMode}
+            className={`font-black text-zinc-900 active:scale-95 inline-block transition-transform dark:text-white ml-1 disabled:opacity-50 ${accent.toggleHover}`}
           >
             {isSignUp ? 'SIGN IN' : 'SIGN UP'}
           </button>

@@ -126,7 +126,7 @@ export default function HuntPage() {
           const lng = position.coords.longitude
           setLocation({ lat, lng, name: await fetchLocationName(lat, lng) })
         },
-        () => {}, { enableHighAccuracy: true, timeout: 5000 }
+        () => { }, { enableHighAccuracy: true, timeout: 5000 }
       )
     }
 
@@ -202,7 +202,7 @@ export default function HuntPage() {
     }
   }
 
- const submitEncounter = async () => {
+  const submitEncounter = async () => {
     if (!user || capturedImages.length === 0) return
     setIsSubmitting(true)
 
@@ -410,21 +410,24 @@ export default function HuntPage() {
           <div className="flex flex-col items-center justify-center pb-4 space-y-4">
 
             {status === 'training' && !tempImageUrl && (
-              <div className="bg-black/40 backdrop-blur-md px-5 py-2 rounded-full text-white font-bold text-xs tracking-wider animate-in fade-in zoom-in duration-300">
-                {/* คำนวณคำอธิบายให้ตรงกับ Index ของ Array */}
-                📸 Capture angle: {trainingAngles[capturedImages.length - 1]} ({capturedImages.length}/3)
+              <div className="flex flex-col items-center space-y-2 px-8 text-center animate-in fade-in zoom-in duration-300">
+                <div className="bg-black/40 backdrop-blur-md px-5 py-2 rounded-full text-white font-bold text-xs tracking-wider">
+                  📸 Capture angle: {trainingAngles[capturedImages.length - 1]} ({capturedImages.length}/3)
+                </div>
+                <p className="text-white/70 text-[11px] font-medium leading-snug max-w-[260px]">
+                  Extra angles help our AI recognize this cat more accurately next time 🧠🐾
+                </p>
               </div>
             )}
 
             {status === 'training' && (
               <div className="flex space-x-2">
-                {/* 🌟 ใช้อินเด็กซ์ [1, 2, 3] แทน [0, 1, 2] เพื่อไม่ให้เอารูปหน้าปก (0) มาใส่ในช่อง */}
                 {[1, 2, 3].map(i => (
                   <div key={i} className={`w-14 h-14 rounded-xl overflow-hidden border-2 transition-colors ${i < capturedImages.length ? 'border-white' : 'border-white/20'}`}>
                     {i < capturedImages.length ? (
                       <img src={capturedImages[i].url} className="w-full h-full object-cover" />
                     ) : (
-                      <div className="w-full h-full bg-black/50 flex items-center justify-center"><Camera className="w-4 h-4 text-white/30"/></div>
+                      <div className="w-full h-full bg-black/50 flex items-center justify-center"><Camera className="w-4 h-4 text-white/30" /></div>
                     )}
                   </div>
                 ))}
@@ -436,60 +439,104 @@ export default function HuntPage() {
             </button>
 
             {status === 'training' && (
-               <button onClick={() => setShowCatList(true)} className="text-sm font-bold text-white underline underline-offset-4 pt-2 shadow-sm drop-shadow-md">
-                 I already know this cat (skip training)
-               </button>
+              <div className="flex flex-col items-center space-y-2 pt-2">
+                {capturedImages.length < 4 && (
+                  <button
+                    onClick={() => setStatus('result')}
+                    className="text-sm font-bold text-white underline underline-offset-4 shadow-sm drop-shadow-md"
+                  >
+                    {capturedImages.length > 1
+                      ? `Cat ran off? Submit with ${capturedImages.length} photos`
+                      : 'Cat ran off? Submit now'}
+                  </button>
+                )}
+                <button onClick={() => setShowCatList(true)} className="text-xs font-medium text-white/60 underline underline-offset-4">
+                  I already know this cat (skip training)
+                </button>
+              </div>
+            )}
+
+            <button onClick={() => handleCapture(status === 'training')} className="w-20 h-20 rounded-full border-[3px] border-white/50 flex items-center justify-center active:scale-95 p-1.5 group mt-2">
+              <div className="w-full h-full rounded-full bg-white group-active:bg-zinc-200"></div>
+            </button>
+
+            {status === 'training' && (
+              <div className="flex flex-col items-center space-y-2 pt-2">
+                {capturedImages.length < 4 && (
+                  <button
+                    onClick={() => setStatus('result')}
+                    className="text-sm font-bold text-white underline underline-offset-4 shadow-sm drop-shadow-md"
+                  >
+                    {capturedImages.length > 1
+                      ? `แมวหนีแล้วเหรอ? ส่งด้วย ${capturedImages.length} รูปเลย`
+                      : 'แมวหนีแล้วเหรอ? ส่งเลยตอนนี้'}
+                  </button>
+                )}
+                <button onClick={() => setShowCatList(true)} className="text-xs font-medium text-white/60 underline underline-offset-4">
+                  I already know this cat (skip training)
+                </button>
+              </div>
+            )}
+
+            <button onClick={() => handleCapture(status === 'training')} className="w-20 h-20 rounded-full border-[3px] border-white/50 flex items-center justify-center active:scale-95 p-1.5 group mt-2">
+              <div className="w-full h-full rounded-full bg-white group-active:bg-zinc-200"></div>
+            </button>
+
+            {status === 'training' && (
+              <button onClick={() => setShowCatList(true)} className="text-sm font-bold text-white underline underline-offset-4 pt-2 shadow-sm drop-shadow-md">
+                I already know this cat (skip training)
+              </button>
             )}
           </div>
         )}
 
         {/* Modal: เลือกแมวเอง */}
         {showCatList && (
-           <div className="absolute bottom-0 left-0 w-full h-[75vh] bg-white rounded-t-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom z-50 text-zinc-900 flex flex-col">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="font-black text-xl">Select a cat</h3>
-                <button onClick={() => setShowCatList(false)}><X className="w-6 h-6 text-zinc-400"/></button>
-              </div>
+          <div className="absolute bottom-0 left-0 w-full h-[75vh] bg-white rounded-t-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom z-50 text-zinc-900 flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-black text-xl">Select a cat</h3>
+              <button onClick={() => setShowCatList(false)}><X className="w-6 h-6 text-zinc-400" /></button>
+            </div>
 
-              <div className="relative mb-4">
-                <Search className="absolute left-3 top-3 w-5 h-5 text-zinc-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search cat name..."
-                  className="w-full bg-zinc-100 rounded-xl h-12 pl-10 pr-4 outline-none font-bold text-zinc-700 focus:ring-2 focus:ring-orange-500"
-                />
-              </div>
+            <div className="relative mb-4">
+              <Search className="absolute left-3 top-3 w-5 h-5 text-zinc-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search cat name..."
+                className="w-full bg-zinc-100 rounded-xl h-12 pl-10 pr-4 outline-none font-bold text-zinc-700 focus:ring-2 focus:ring-orange-500"
+              />
+            </div>
 
-              <div className="flex-1 overflow-y-auto space-y-2 pb-10">
-                <button onClick={handleDeclareAsNew} className="w-full text-left p-4 bg-orange-50 hover:bg-orange-100 rounded-xl flex justify-between items-center mb-4 border border-orange-200 transition-colors">
-                  <div className="flex items-center space-x-2 text-orange-600">
-                    <Plus className="w-5 h-5" />
-                    <span className="font-bold">Add as a new cat (New Discovery)</span>
-                  </div>
-                </button>
+            <div className="flex-1 overflow-y-auto space-y-2 pb-10">
+              <button onClick={handleDeclareAsNew} className="w-full text-left p-4 bg-orange-50 hover:bg-orange-100 rounded-xl flex justify-between items-center mb-4 border border-orange-200 transition-colors">
+                <div className="flex items-center space-x-2 text-orange-600">
+                  <Plus className="w-5 h-5" />
+                  <span className="font-bold">Add as a new cat (New Discovery)</span>
+                </div>
+              </button>
 
-                {filteredCats.map(cat => {
-                  const isAIMatch = matchedCat && cat.id === matchedCat.id
-                  return (
-                    <button key={cat.id} onClick={() => handleSelectCatManually(cat)} className={`w-full text-left p-4 rounded-xl flex justify-between items-center transition-colors ${isAIMatch ? 'bg-blue-50 border border-blue-200 hover:bg-blue-100' : 'bg-zinc-50 hover:bg-zinc-100'}`}>
-                      <div>
-                        <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                          <span className="font-bold text-zinc-900">{cat.name}</span>
-                          {isAIMatch && <span className="text-[9px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">🎯 AI suggested</span>}
-                          {cat.hasInteracted && !isAIMatch && <span className="text-[9px] bg-green-100 text-green-600 px-2 py-0.5 rounded-full font-bold">⭐ Seen before</span>}
-                        </div>
-                        <span className="text-xs text-zinc-400 flex items-center mt-1">
-                          {cat.area}
-                          {cat.distance !== Infinity && ` • ${cat.distance < 1 ? (cat.distance * 1000).toFixed(0) + ' m' : cat.distance.toFixed(1) + ' km'} away`}
-                        </span>
+              {filteredCats.map(cat => {
+                const isAIMatch = matchedCat && cat.id === matchedCat.id
+                return (
+                  <button key={cat.id} onClick={() => handleSelectCatManually(cat)} className={`w-full text-left p-4 rounded-xl flex justify-between items-center transition-colors ${isAIMatch ? 'bg-blue-50 border border-blue-200 hover:bg-blue-100' : 'bg-zinc-50 hover:bg-zinc-100'}`}>
+                    <div>
+                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                        <span className="font-bold text-zinc-900">{cat.name}</span>
+                        {isAIMatch && <span className="text-[9px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">🎯 AI suggested</span>}
+                        {cat.hasInteracted && !isAIMatch && <span className="text-[9px] bg-green-100 text-green-600 px-2 py-0.5 rounded-full font-bold">⭐ Seen before</span>}
                       </div>
-                    </button>
-                  )
-                })}
-              </div>
-           </div>
+                      <span className="text-xs text-zinc-400 flex items-center mt-1">
+                        {cat.area}
+                        {cat.distance !== Infinity && ` • ${cat.distance < 1 ? (cat.distance * 1000).toFixed(0) + ' m' : cat.distance.toFixed(1) + ' km'} away`}
+                      </span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         )}
 
         {/* หน้าจอสรุปผล */}
