@@ -110,14 +110,25 @@ export default function HuntPage() {
   }, [user, router])
 
   const fetchLocationName = async (lat: number, lng: number) => {
-    try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14`)
-      const data = await res.json()
-      return data.address?.suburb || data.address?.city_district || data.address?.town || data.address?.city || 'Unknown Area'
-    } catch (error) {
-      return 'Unknown Area'
-    }
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14`)
+    const data = await res.json()
+    console.log('nominatim address:', data.address) // เอาไว้ debug ดูว่าจริงๆ field ไหนมา
+    return (
+      data.address?.suburb ||
+      data.address?.neighbourhood ||
+      data.address?.quarter ||
+      data.address?.city_district ||
+      data.address?.town ||
+      data.address?.city ||
+      data.address?.state_district ||
+      data.address?.county ||
+      'Unknown Area'
+    )
+  } catch (error) {
+    return 'Unknown Area'
   }
+}
 
   const handleCapture = async (isTrainingStep = false) => {
     if (navigator.vibrate) navigator.vibrate(50)
