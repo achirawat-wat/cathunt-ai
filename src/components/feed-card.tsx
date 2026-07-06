@@ -153,28 +153,28 @@ export default function FeedCard({ feed }: FeedCardProps) {
   }, [showComments, feed.id])
 
   // 💖 ฟังก์ชันกดไลก์ (ทำงานจริงกับ DB)
+ // 💖 ฟังก์ชันกดไลก์ (ให้ DB Trigger จัดการเลขให้)
   const handleLike = async () => {
-    if (!user || isLiking) return // 👈 กันกดซ้ำระหว่างที่ request ก่อนหน้ายังไม่เสร็จ
+    if (!user || isLiking) return 
     setIsLiking(true)
 
     const currentlyLiked = isLiked
 
-    // อัปเดต UI ทันทีให้ดูลื่นไหล (Optimistic UI)
+    // อัปเดต UI ทันทีให้ดูลื่นไหล
     setIsLiked(!currentlyLiked)
     setLikesCount(prev => currentlyLiked ? prev - 1 : prev + 1)
     if (!currentlyLiked) triggerHeartAnimation()
 
     try {
       if (currentlyLiked) {
-        // กรณี "เลิกไลก์" ลบแค่ในตาราง likes (เดี๋ยว Trigger จัดการลบเลขต่อให้ทะลุ RLS)
+        // กรณี "เลิกไลก์" ลบแค่ในตาราง likes พอ
         await supabase.from('likes').delete().eq('encounter_id', feed.id).eq('user_id', user.id)
       } else {
-        // กรณี "กดไลก์ใหม่" เพิ่มแค่ในตาราง likes
+        // กรณี "กดไลก์ใหม่" เพิ่มแค่ในตาราง likes พอ
         await supabase.from('likes').insert({ encounter_id: feed.id, user_id: user.id })
       }
     } catch (err) {
       console.error('Error toggling like:', err)
-      // ถ้าพัง ให้ Rollback UI กลับ
       setIsLiked(currentlyLiked)
       setLikesCount(prev => currentlyLiked ? prev + 1 : prev - 1)
     } finally {
