@@ -434,6 +434,7 @@ export default function HuntPage() {
               </div>
             )}
 
+            {/* ✅ ปุ่มถ่ายรูปเดียว ไม่ซ้ำ */}
             <button onClick={() => handleCapture(status === 'training')} className="w-20 h-20 rounded-full border-[3px] border-white/50 flex items-center justify-center active:scale-95 p-1.5 group mt-2">
               <div className="w-full h-full rounded-full bg-white group-active:bg-zinc-200"></div>
             </button>
@@ -454,38 +455,6 @@ export default function HuntPage() {
                   I already know this cat (skip training)
                 </button>
               </div>
-            )}
-
-            <button onClick={() => handleCapture(status === 'training')} className="w-20 h-20 rounded-full border-[3px] border-white/50 flex items-center justify-center active:scale-95 p-1.5 group mt-2">
-              <div className="w-full h-full rounded-full bg-white group-active:bg-zinc-200"></div>
-            </button>
-
-            {status === 'training' && (
-              <div className="flex flex-col items-center space-y-2 pt-2">
-                {capturedImages.length < 4 && (
-                  <button
-                    onClick={() => setStatus('result')}
-                    className="text-sm font-bold text-white underline underline-offset-4 shadow-sm drop-shadow-md"
-                  >
-                    {capturedImages.length > 1
-                      ? `แมวหนีแล้วเหรอ? ส่งด้วย ${capturedImages.length} รูปเลย`
-                      : 'แมวหนีแล้วเหรอ? ส่งเลยตอนนี้'}
-                  </button>
-                )}
-                <button onClick={() => setShowCatList(true)} className="text-xs font-medium text-white/60 underline underline-offset-4">
-                  I already know this cat (skip training)
-                </button>
-              </div>
-            )}
-
-            <button onClick={() => handleCapture(status === 'training')} className="w-20 h-20 rounded-full border-[3px] border-white/50 flex items-center justify-center active:scale-95 p-1.5 group mt-2">
-              <div className="w-full h-full rounded-full bg-white group-active:bg-zinc-200"></div>
-            </button>
-
-            {status === 'training' && (
-              <button onClick={() => setShowCatList(true)} className="text-sm font-bold text-white underline underline-offset-4 pt-2 shadow-sm drop-shadow-md">
-                I already know this cat (skip training)
-              </button>
             )}
           </div>
         )}
