@@ -102,7 +102,7 @@ export async function POST(req: Request) {
     // ==========================================
     const { data: matchedCats, error } = await supabase.rpc('match_cats', {
       query_embedding: catVector,
-      match_threshold: 0.78,
+      match_threshold: 0.85,
       match_count: 1
     })
 

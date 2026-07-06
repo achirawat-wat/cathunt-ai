@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import BottomNav from '@/components/bottom-nav'
+import InstallPrompt from '@/components/install-prompt'
 import "./globals.css";
 
 export default function RootLayout({
@@ -80,6 +81,7 @@ export default function RootLayout({
           
           <div className="flex-1 overflow-y-auto no-scrollbar">
             {children}
+            <InstallPrompt />
           </div>
 
           {shouldShowBottomNav && <BottomNav />}
