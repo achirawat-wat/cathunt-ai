@@ -39,7 +39,7 @@ function shuffle<T>(arr: T[]): T[] {
   const a = [...arr]
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
-    ;[a[i], a[j]] = [a[j], a[i]]
+      ;[a[i], a[j]] = [a[j], a[i]]
   }
   return a
 }
@@ -57,7 +57,7 @@ function formatPost(post: any) {
     cat: {
       id: post.cat_id,
       name: catInfo?.name || 'Unknown Cat',
-      area: catInfo?.area || 'Unknown Area',
+      area: post.location_name || catInfo?.area || 'Unknown Area',
     },
     image: post.image_url,
     content: post.description,
@@ -75,6 +75,7 @@ const ENCOUNTER_SELECT = `
   description,
   likes_count,
   created_at,
+  location_name,
   cats ( name, area ),
   profiles ( id, username, avatar_url )
 `
@@ -445,7 +446,7 @@ export default function FeedPage() {
         ) : feeds.length === 0 ? (
           <div className="text-center py-20 flex flex-col items-center justify-center space-y-4 opacity-50">
             <Cat className="h-16 w-16 text-zinc-300 dark:text-zinc-700" />
-            <p className="text-xs font-black tracking-widest text-zinc-400 uppercase">No cats spotted yet.<br/>Go hunt some!</p>
+            <p className="text-xs font-black tracking-widest text-zinc-400 uppercase">No cats spotted yet.<br />Go hunt some!</p>
           </div>
         ) : (
           <>

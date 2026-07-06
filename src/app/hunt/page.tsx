@@ -110,25 +110,25 @@ export default function HuntPage() {
   }, [user, router])
 
   const fetchLocationName = async (lat: number, lng: number) => {
-  try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14`)
-    const data = await res.json()
-    console.log('nominatim address:', data.address) // เอาไว้ debug ดูว่าจริงๆ field ไหนมา
-    return (
-      data.address?.suburb ||
-      data.address?.neighbourhood ||
-      data.address?.quarter ||
-      data.address?.city_district ||
-      data.address?.town ||
-      data.address?.city ||
-      data.address?.state_district ||
-      data.address?.county ||
-      'Unknown Area'
-    )
-  } catch (error) {
-    return 'Unknown Area'
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14`)
+      const data = await res.json()
+      console.log('nominatim address:', data.address) // เอาไว้ debug ดูว่าจริงๆ field ไหนมา
+      return (
+        data.address?.suburb ||
+        data.address?.neighbourhood ||
+        data.address?.quarter ||
+        data.address?.city_district ||
+        data.address?.town ||
+        data.address?.city ||
+        data.address?.state_district ||
+        data.address?.county ||
+        'Unknown Area'
+      )
+    } catch (error) {
+      return 'Unknown Area'
+    }
   }
-}
 
   const handleCapture = async (isTrainingStep = false) => {
     if (navigator.vibrate) navigator.vibrate(50)
@@ -261,7 +261,10 @@ export default function HuntPage() {
         if (catError) throw catError
         finalCatId = newCat.id
       } else {
-        await supabase.from('cats').update({ last_seen: new Date().toISOString() }).eq('id', finalCatId)
+        await supabase.from('cats').update({
+          last_seen: new Date().toISOString(),
+          area: location?.name || matchedCat.area // ถ้า GPS หาไม่เจอรอบนี้ ใช้ของเดิมไว้ก่อน ไม่ทับด้วย Unknown
+        }).eq('id', finalCatId)
       }
 
       const finalDescription = description.trim() !== ''
@@ -278,8 +281,9 @@ export default function HuntPage() {
           description: finalDescription,
           lat: location?.lat || null,
           lng: location?.lng || null,
+          location_name: location?.name || null, // 👈 เพิ่มบรรทัดนี้
           image_embedding: `[${capturedImages[0].vector.join(',')}]`,
-          is_training: false // 👈 โพสต์หลัก
+          is_training: false
         })
       if (mainEncError) throw mainEncError
 
@@ -536,10 +540,10 @@ export default function HuntPage() {
                         )}
                         {typeof cat.similarity === 'number' && (
                           <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${cat.similarity >= 0.85
-                              ? 'bg-blue-100 text-blue-600'
-                              : cat.similarity >= 0.6
-                                ? 'bg-yellow-100 text-yellow-600'
-                                : 'bg-zinc-100 text-zinc-400'
+                            ? 'bg-blue-100 text-blue-600'
+                            : cat.similarity >= 0.6
+                              ? 'bg-yellow-100 text-yellow-600'
+                              : 'bg-zinc-100 text-zinc-400'
                             }`}>
                             {Math.round(cat.similarity * 100)}% match
                           </span>
