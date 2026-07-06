@@ -493,7 +493,11 @@ export default function HuntPage() {
                     <div>
                       <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                         <span className="font-bold text-zinc-900">{cat.name}</span>
-                        {isAIMatch && <span className="text-[9px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">🎯 AI suggested</span>}
+                        {isAIMatch && (
+                          <span className="text-[9px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">
+                            🎯 AI suggested{typeof matchedCat?.similarity === 'number' ? ` · ${Math.round(matchedCat.similarity * 100)}%` : ''}
+                          </span>
+                        )}
                         {cat.hasInteracted && !isAIMatch && <span className="text-[9px] bg-green-100 text-green-600 px-2 py-0.5 rounded-full font-bold">⭐ Seen before</span>}
                       </div>
                       <span className="text-xs text-zinc-400 flex items-center mt-1">
@@ -525,6 +529,11 @@ export default function HuntPage() {
                   <div className="flex items-center space-x-2 text-zinc-400 mb-5">
                     <Check className="h-4 w-4" />
                     <span className="font-bold text-[10px] uppercase">Match Found</span>
+                    {typeof matchedCat?.similarity === 'number' && (
+                      <span className="ml-1 text-[10px] font-black text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                        {Math.round(matchedCat.similarity * 100)}% match
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center space-x-4 mb-4">
