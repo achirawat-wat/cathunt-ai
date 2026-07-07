@@ -71,6 +71,11 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
   const [showGallery, setShowGallery] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
 
+  // 👥 Followers List states
+  const [showFollowersList, setShowFollowersList] = useState(false)
+  const [followersList, setFollowersList] = useState<any[]>([])
+  const [isLoadingFollowers, setIsLoadingFollowers] = useState(false)
+
   useEffect(() => {
     fetchCatDetails()
     fetchNotes()
@@ -142,12 +147,36 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
     }
   }
 
+  // 👥 โหลดรายชื่อคน Follow
+  const fetchFollowersList = async () => {
+    setIsLoadingFollowers(true)
+    const { data, error } = await supabase
+      .from('follows')
+      .select('created_at, profiles(username, avatar_url)')
+      .eq('cat_id', catId)
+      .order('created_at', { ascending: true })
+
+    if (data && !error) {
+      setFollowersList(data)
+    }
+    setIsLoadingFollowers(false)
+  }
+
+  const handleOpenFollowersList = () => {
+    setShowFollowersList(true)
+    fetchFollowersList()
+  }
+
   // 🐾 ฟังก์ชัน Follow
   const handleFollow = async () => {
     if (!user) return
     setIsSubmitting(true)
     const currentlyFollowing = isFollowing
     setIsFollowing(!currentlyFollowing) // Optimistic UI
+    setCat((prev: any) => ({
+      ...prev,
+      followers_count: Math.max(0, (prev.followers_count || 0) + (currentlyFollowing ? -1 : 1))
+    }))
 
     try {
       if (currentlyFollowing) {
@@ -160,6 +189,10 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
     } catch (err) {
       console.error('Follow error:', err)
       setIsFollowing(currentlyFollowing)
+      setCat((prev: any) => ({
+        ...prev,
+        followers_count: Math.max(0, (prev.followers_count || 0) + (currentlyFollowing ? 1 : -1))
+      }))
     } finally {
       setIsSubmitting(false)
     }
@@ -286,10 +319,10 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
               <span className="text-3xl font-black text-orange-500 leading-none">{encounters.length}</span>
               <span className="text-[10px] font-bold tracking-widest text-orange-600/70 uppercase mt-2 dark:text-orange-400/70">Sightings</span>
             </div>
-            <div className="bg-zinc-100 p-4 rounded-[1.5rem] flex flex-col items-center justify-center dark:bg-zinc-800">
+            <button onClick={handleOpenFollowersList} className="bg-zinc-100 p-4 rounded-[1.5rem] flex flex-col items-center justify-center dark:bg-zinc-800 active:scale-95 transition-transform hover:bg-zinc-200 dark:hover:bg-zinc-700">
               <span className="text-3xl font-black text-zinc-900 dark:text-white leading-none">{cat.followers_count || 0}</span>
               <span className="text-[10px] font-bold tracking-widest text-zinc-400 uppercase mt-2">Followers</span>
-            </div>
+            </button>
           </div>
           <div className="flex flex-col space-y-4 text-sm font-bold">
             <div className="flex justify-between items-center pb-4 border-b border-zinc-100 dark:border-zinc-800">
@@ -500,6 +533,53 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* 👥 Followers Slide-over */}
+      {showFollowersList && (
+        <div className="absolute inset-0 z-[2000] flex flex-col bg-zinc-50 dark:bg-zinc-950 animate-in slide-in-from-right-full duration-300 pointer-events-auto">
+          <div className="flex items-center justify-between px-6 py-5 bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 shadow-sm">
+            <h2 className="text-xl font-black text-zinc-900 dark:text-white tracking-wide">Followers</h2>
+            <button onClick={() => setShowFollowersList(false)} className="w-10 h-10 bg-zinc-50 dark:bg-zinc-800 rounded-full flex items-center justify-center active:scale-95 transition-colors">
+              <X className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-4">
+            {isLoadingFollowers ? (
+              <div className="text-center py-20 flex flex-col items-center">
+                <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+              </div>
+            ) : followersList.length === 0 ? (
+              <div className="text-center py-20 text-zinc-400 font-medium flex flex-col items-center">
+                <Heart className="w-12 h-12 mb-4 text-zinc-300 dark:text-zinc-700" />
+                <p>No followers yet.</p>
+              </div>
+            ) : (
+              followersList.map((f, i) => {
+                const isDiscoverer = encounters.length > 0 && encounters[encounters.length - 1]?.profiles?.username === f.profiles?.username
+
+                return (
+                  <div key={i} className="flex items-center space-x-4 p-4 rounded-[1.5rem] bg-white dark:bg-zinc-900 shadow-sm border border-zinc-100 dark:border-zinc-800">
+                    <Avatar src={f.profiles?.avatar_url} alt="avatar" size="w-12 h-12" rounded="rounded-full" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-2">
+                        <p className="font-black text-zinc-900 dark:text-white truncate">
+                          {f.profiles?.username || 'Anonymous'}
+                        </p>
+                        {isDiscoverer && (
+                          <span className="px-2 py-0.5 bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 text-[9px] font-black uppercase tracking-widest rounded-full shrink-0">
+                            Discoverer
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
         </div>
       )}
     </main>
