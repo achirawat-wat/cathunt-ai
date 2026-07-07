@@ -57,33 +57,31 @@ export default function HuntPage() {
 
   const fetchLocationName = async (lat: number, lng: number) => {
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14&accept-language=th&email=hello@cathunt.app`)
-      const data = await res.json()
-      console.log('nominatim address:', data.address) // เอาไว้ debug ดูว่าจริงๆ field ไหนมา
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14`, {
+        headers: {
+          'Accept-Language': 'th,en;q=0.9',
+          'User-Agent': 'CatHunt-App/1.0'
+        }
+      })
       
-      if (data.error) return 'Unknown Area'
+      if (!res.ok) throw new Error('API Rate limit or blocked')
+      
+      const data = await res.json()
+      const addr = data.address
+      
+      if (!addr) return 'Unknown Area'
 
-      if (data.address) {
-        const name = (
-          data.address.suburb ||
-          data.address.neighbourhood ||
-          data.address.village ||
-          data.address.quarter ||
-          data.address.city_district ||
-          data.address.district ||
-          data.address.town ||
-          data.address.city ||
-          data.address.municipality ||
-          data.address.state_district ||
-          data.address.county ||
-          data.address.province ||
-          data.address.state
-        )
-        if (name) return name
-      }
-
-      return data.display_name ? data.display_name.split(',')[0] : 'Unknown Area'
+      return addr.suburb ||        // แขวง
+             addr.village ||       // หมู่บ้าน
+             addr.city_district || // เขต
+             addr.county ||        // อำเภอ
+             addr.town ||          // เมือง
+             addr.city ||          // จังหวัด/เมืองใหญ่
+             addr.state ||         // จังหวัด
+             data.display_name?.split(',')[0] ||
+             'Unknown Area'
     } catch (error) {
+      console.error('Location Fetch Error:', error)
       return 'Unknown Area'
     }
   }
