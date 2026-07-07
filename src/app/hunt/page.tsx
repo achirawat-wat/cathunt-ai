@@ -37,6 +37,7 @@ export default function HuntPage() {
   const [tempImageUrl, setTempImageUrl] = useState<string | null>(null)
 
   const [status, setStatus] = useState<'idle' | 'scanning' | 'result' | 'training'>('idle')
+  const [errorPopup, setErrorPopup] = useState<string | null>(null)
   const [matchType, setMatchType] = useState<'known' | 'new' | null>(null)
   const [matchedCat, setMatchedCat] = useState<any>(null)
 
@@ -179,7 +180,7 @@ export default function HuntPage() {
           setTempImageUrl(null)
 
           if (!res.ok || !result.success) {
-            alert(result.error || 'Analysis failed. Try a different angle 😿')
+            setErrorPopup(result.error || 'Analysis failed. Try a different angle 😿')
             setStatus(isTrainingStep ? 'training' : 'idle')
             return
           }
@@ -220,7 +221,7 @@ export default function HuntPage() {
 
         } catch (error) {
           setTempImageUrl(null)
-          alert('Something went wrong. Please try again.')
+          setErrorPopup('Something went wrong. Please try again.')
           setStatus(isTrainingStep ? 'training' : 'idle')
         }
       }
@@ -306,7 +307,7 @@ export default function HuntPage() {
       }
 
       // 4. อัปเดตสถิติโปรไฟล์
-      const { data: profile } = await supabase.from('profiles').select('cats_found').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('cats_found').eq('id', user.id).maybeSingle()
       await supabase.from('profiles').update({ cats_found: (profile?.cats_found || 0) + 1 }).eq('id', user.id)
 
       router.push('/feed')
@@ -344,6 +345,7 @@ export default function HuntPage() {
     setLocation(null)
     setShowCatList(false)
     setStatus('idle')
+    setErrorPopup(null)
   }
 
   const filteredCats = allCats
@@ -420,6 +422,32 @@ export default function HuntPage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Error Popup Overlay */}
+      {errorPopup && (
+        <div className="absolute inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md">
+          <div className="bg-white border border-zinc-100 p-8 rounded-[2rem] w-full max-w-sm flex flex-col items-center text-center animate-in zoom-in-95 fade-in duration-300 shadow-2xl pointer-events-auto">
+            <div className="w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center mb-6">
+              <Search className="h-8 w-8 text-orange-500" />
+            </div>
+            <h3 className="text-zinc-900 font-black text-xl mb-3">No Cat Found!</h3>
+            <p className="text-zinc-500 text-sm mb-8 leading-relaxed font-medium">
+              {errorPopup}
+            </p>
+            <button
+              onClick={() => {
+                setErrorPopup(null)
+                if (videoRef.current) {
+                  videoRef.current.play().catch(console.error)
+                }
+              }}
+              className="w-full h-14 bg-orange-500 text-white rounded-[1.2rem] font-bold active:scale-95 transition-transform shadow-md shadow-orange-500/20"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Header */}

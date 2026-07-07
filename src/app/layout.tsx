@@ -21,7 +21,7 @@ export default function RootLayout({
   // 1. ระบบเช็ค Auth
   useEffect(() => {
     const fetchProfile = async (userId: string) => {
-      const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
+      const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle()
       setProfile(data)
     }
 

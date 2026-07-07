@@ -42,7 +42,18 @@ export async function POST(req: Request) {
     const catDetection = detectData.find((item: any) => item.label === 'cat' && item.score > 0.5)
 
     if (!catDetection) {
-      return NextResponse.json({ success: false, error: 'AI มองไม่เห็นแมวในรูปนี้เลย ลองขยับกล้องดูนะ 😿' }, { status: 400 })
+      const topLabels = detectData
+        .filter((item: any) => item.score > 0.3)
+        .map((item: any) => item.label)
+        // Deduplicate labels
+        .filter((value: any, index: any, self: any) => self.indexOf(value) === index)
+        .slice(0, 3)
+        
+      const sawWhat = topLabels.length > 0 
+        ? `มันน่าจะเป็น ${topLabels.join(', ')}` 
+        : `มองไม่ค่อยชัดเลย`
+
+      return NextResponse.json({ success: false, error: `ไม่พบแมวในรูปภาพ! ${sawWhat} 😿` }, { status: 400 })
     }
 
     // ==========================================

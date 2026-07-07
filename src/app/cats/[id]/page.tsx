@@ -98,7 +98,7 @@ export default function CatProfilePage({ params }: { params: Promise<{ id: strin
         .from('cats')
         .select('*')
         .eq('id', catId)
-        .single()
+        .maybeSingle()
 
       if (catError) throw catError
       setCat(catData)
