@@ -146,13 +146,22 @@ export default function FeedPage() {
 
     fetchNotifications()
 
-    const channel = supabase.channel('realtime:notifications')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${user.id}` }, () => {
-        fetchNotifications()
-      })
-      .subscribe()
+    let channel: any = null
+    try {
+      channel = supabase.channel('realtime:notifications')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${user.id}` }, () => {
+          fetchNotifications()
+        })
+        .subscribe()
+    } catch (err) {
+      console.warn("WebSocket not available for realtime:", err)
+    }
 
-    return () => { supabase.removeChannel(channel) }
+    return () => { 
+      if (channel) {
+        try { supabase.removeChannel(channel) } catch (e) {}
+      }
+    }
   }, [user])
 
   const markNotificationsAsRead = async () => {
