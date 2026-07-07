@@ -62,6 +62,7 @@ function formatPost(post: any) {
     image: post.image_url,
     content: post.description,
     time: timeAgo(post.created_at),
+    createdAt: post.created_at,
     likes: post.likes_count || 0
   }
 }
