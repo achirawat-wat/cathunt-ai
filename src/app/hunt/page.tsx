@@ -63,25 +63,36 @@ export default function HuntPage() {
           'User-Agent': 'CatHunt-App/1.0'
         }
       })
-      
-      if (!res.ok) throw new Error('API Rate limit or blocked')
-      
+
+      if (!res.ok) {
+        console.error('❌ OSM API Blocked or Rate Limited:', res.status)
+        return 'Unknown Area'
+      }
+
       const data = await res.json()
       const addr = data.address
-      
+
+      // 🕵️‍♂️ แอบดูว่า API ส่งฟิลด์อะไรมาให้บ้างใน Console
+      console.log('📍 Raw Address Data:', addr)
+
       if (!addr) return 'Unknown Area'
 
+      // 🗺️ เพิ่มการดักจับฟิลด์ให้ครอบคลุมทั้งเขตเมืองและต่างจังหวัด
       return addr.suburb ||        // แขวง
-             addr.village ||       // หมู่บ้าน
-             addr.city_district || // เขต
-             addr.county ||        // อำเภอ
-             addr.town ||          // เมือง
-             addr.city ||          // จังหวัด/เมืองใหญ่
-             addr.state ||         // จังหวัด
-             data.display_name?.split(',')[0] ||
-             'Unknown Area'
+        addr.village ||       // หมู่บ้าน
+        addr.neighbourhood || // ละแวก/ชุมชน
+        addr.quarter ||       // ย่าน
+        addr.city_district || // เขต
+        addr.district ||      // เขต/อำเภอ
+        addr.county ||        // อำเภอ
+        addr.municipality ||  // เทศบาล
+        addr.town ||          // เมือง
+        addr.city ||          // จังหวัด/เมืองใหญ่
+        addr.state ||         // จังหวัด
+        data.display_name?.split(',')[0] ||
+        'Unknown Area'
     } catch (error) {
-      console.error('Location Fetch Error:', error)
+      console.error('❌ Location Fetch Error:', error)
       return 'Unknown Area'
     }
   }
@@ -136,7 +147,7 @@ export default function HuntPage() {
     }
     fetchCatsAndEncounters()
 
-    // 🌍 ขอตำแหน่งล่วงหน้าตอนเปิดกล้องเลย จะได้มีเวลาให้ user กด Allow
+    // 🌍 ขอตำแหน่งล่วงหน้าตอนเปิดกล้องเลย
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
@@ -145,7 +156,7 @@ export default function HuntPage() {
           setLocation({ lat, lng, name: await fetchLocationName(lat, lng) })
         },
         (error) => console.warn('Location request on mount failed:', error),
-        { enableHighAccuracy: true }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 } // 👈 เพิ่ม Timeout 10 วิ
       )
     }
 
@@ -157,7 +168,7 @@ export default function HuntPage() {
   const handleCapture = async (isTrainingStep = false) => {
     if (navigator.vibrate) navigator.vibrate(50)
 
-    // ถ้ายังไม่ได้ location ให้ลองขอใหม่ แต่ไม่ใส่ timeout แล้วเผื่อเค้าเพิ่งกด
+    // ถ้ายังไม่ได้ location ให้ลองขอใหม่
     if (!isTrainingStep && !location && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
@@ -165,7 +176,8 @@ export default function HuntPage() {
           const lng = position.coords.longitude
           setLocation({ lat, lng, name: await fetchLocationName(lat, lng) })
         },
-        () => { }, { enableHighAccuracy: true }
+        (error) => console.warn('Capture location fallback failed:', error),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 } // 👈 เพิ่ม Timeout 10 วิ
       )
     }
 
@@ -648,7 +660,7 @@ export default function HuntPage() {
                     <div>
                       <h3 className="font-black text-2xl tracking-tight text-zinc-900">{matchedCat?.name}</h3>
                       <p className="text-xs font-medium text-zinc-500 flex items-center">
-                      <MapPin className="h-3 w-3 mr-1" /> {location?.name ? (location.name === 'Unknown Area' ? 'Unknown Area' : `Near ${location.name}`) : 'Auto-detected'}
+                        <MapPin className="h-3 w-3 mr-1" /> {location?.name ? (location.name === 'Unknown Area' ? 'Unknown Area' : `Near ${location.name}`) : 'Auto-detected'}
                       </p>
                     </div>
                   </div>
