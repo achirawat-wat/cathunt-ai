@@ -116,25 +116,28 @@ export default function HuntPage() {
       const data = await res.json()
       console.log('nominatim address:', data.address) // เอาไว้ debug ดูว่าจริงๆ field ไหนมา
       
-      if (!data || !data.address) return 'Unknown Area'
+      if (data.error) return 'Unknown Area'
 
-      return (
-        data.address.suburb ||
-        data.address.neighbourhood ||
-        data.address.village ||
-        data.address.quarter ||
-        data.address.city_district ||
-        data.address.district ||
-        data.address.town ||
-        data.address.city ||
-        data.address.municipality ||
-        data.address.state_district ||
-        data.address.county ||
-        data.address.province ||
-        data.address.state ||
-        data.name ||
-        'Unknown Area'
-      )
+      if (data.address) {
+        const name = (
+          data.address.suburb ||
+          data.address.neighbourhood ||
+          data.address.village ||
+          data.address.quarter ||
+          data.address.city_district ||
+          data.address.district ||
+          data.address.town ||
+          data.address.city ||
+          data.address.municipality ||
+          data.address.state_district ||
+          data.address.county ||
+          data.address.province ||
+          data.address.state
+        )
+        if (name) return name
+      }
+
+      return data.display_name ? data.display_name.split(',')[0] : 'Unknown Area'
     } catch (error) {
       return 'Unknown Area'
     }
