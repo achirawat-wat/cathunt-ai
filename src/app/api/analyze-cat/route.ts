@@ -75,7 +75,7 @@ export async function POST(req: Request) {
     const croppedBase64 = `data:image/jpeg;base64,${croppedBuffer.toString('base64')}`
 
     // ==========================================
-    // 3. ด่านสาม: สกัด DNA แมวจาก "รูปที่ครอปแล้ว" (Jina AI - 512 มิติ)
+    // 3. ด่านสาม: สกัด DNA แมวจาก "รูปที่ครอปแล้ว" (Jina AI - 768 มิติ)
     // ==========================================
     if (!JINA_API_KEY) {
       throw new Error("ระบบขาด JINA_API_KEY")

@@ -45,7 +45,7 @@ function shuffle<T>(arr: T[]): T[] {
   return a
 }
 
-function formatPost(post: any) {
+function formatPost(post: any, isUnseen: boolean = false) {
   const catInfo = Array.isArray(post.cats) ? post.cats[0] : post.cats
   const profileInfo = Array.isArray(post.profiles) ? post.profiles[0] : post.profiles
 
@@ -64,7 +64,8 @@ function formatPost(post: any) {
     content: post.description,
     time: timeAgo(post.created_at),
     createdAt: post.created_at,
-    likes: post.likes_count || 0
+    likes: post.likes_count || 0,
+    isUnseen
   }
 }
 
@@ -436,7 +437,7 @@ export default function FeedPage() {
         useFeedStore.setState({
           buffer: remainingBuffer,
           shownIds: newShownIds,
-          feeds: [...finalState.feeds, ...nextBatch.map((item) => formatPost(item.raw))]
+          feeds: [...finalState.feeds, ...nextBatch.map((item) => formatPost(item.raw, !finalState.seenIds.has(item.raw.id)))]
         })
       } else if (finalState.hasMore) {
         useFeedStore.setState({ hasMore: false })

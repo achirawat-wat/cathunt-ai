@@ -25,8 +25,6 @@ function formatCount(num: number) {
   return new Intl.NumberFormat('en', { notation: 'compact' }).format(num)
 }
 
-// 🆕 เกณฑ์ความ "ใหม่" ของโพสต์ (2 นาที)
-const NEW_POST_THRESHOLD_MS = 2 * 60 * 1000
 
 // 🐱 Avatar component: โชว์รูปจริงถ้ามี ไม่งั้น fallback เป็น cat icon
 function Avatar({
@@ -69,14 +67,13 @@ interface FeedCardProps {
   feed: {
     id: string
     time: string
-    // 🆕 timestamp ดิบ (ISO string) ของตอนที่โพสต์ถูกสร้าง ใช้คำนวณ badge "New"
-    // ถ้าไม่ส่งมา จะไม่มี badge New โชว์ (fallback แบบปลอดภัย)
     createdAt?: string
     image: string
     content: string
     likes: number
     user: { name: string; avatar: string }
     cat: { id: string; name: string; area: string }
+    isUnseen?: boolean
   }
 }
 
@@ -103,31 +100,8 @@ export default function FeedCard({ feed }: FeedCardProps) {
   const lastTapRef = useRef<number>(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // 🆕 เช็คว่าโพสต์นี้ "ใหม่" อยู่ไหม (สร้างมาไม่เกิน 2 นาที)
-  const [isNew, setIsNew] = useState(false)
-
-  useEffect(() => {
-    if (!feed.createdAt) {
-      setIsNew(false)
-      return
-    }
-
-    const createdTime = new Date(feed.createdAt).getTime()
-    if (Number.isNaN(createdTime)) {
-      setIsNew(false)
-      return
-    }
-
-    const updateIsNew = () => {
-      const diff = Date.now() - createdTime
-      setIsNew(diff >= 0 && diff < NEW_POST_THRESHOLD_MS)
-    }
-
-    updateIsNew()
-    // เช็คทุก 5 วิ เพื่อให้ badge หายไปเองอัตโนมัติตอนเลยเวลา 2 นาที โดยไม่ต้อง refresh หน้า
-    const interval = setInterval(updateIsNew, 5000)
-    return () => clearInterval(interval)
-  }, [feed.createdAt])
+  // 🆕 ถ้าส่งค่า isUnseen มาเป็น true แปลว่าโพสต์นี้เพิ่งเคยเห็นครั้งแรกใน session นี้
+  const isNew = feed.isUnseen
 
   // 🔍 1. เช็คสถานะตอนโหลดการ์ดขึ้นมา (ว่าเคยไลก์หรือยัง)
   useEffect(() => {
