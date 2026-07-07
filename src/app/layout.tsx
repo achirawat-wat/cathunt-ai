@@ -79,10 +79,10 @@ export default function RootLayout({
 
     if (!user && !isPublicRoute) {
       // ถ้าไม่ได้ล็อกอิน และเข้าหน้าแปลกๆ -> เตะกลับหน้าแรก
-      router.push('/')
+      router.replace('/')
     } else if (user && isPublicRoute) {
       // ถ้าล็อกอินแล้ว แต่เผลอเปิดมาหน้าแรกหรือหน้า Login -> พาไปหน้า Feed
-      router.push('/feed')
+      router.replace('/feed')
     }
   }, [user, loading, pathname, router])
 
