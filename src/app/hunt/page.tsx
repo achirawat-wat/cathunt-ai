@@ -112,7 +112,7 @@ export default function HuntPage() {
 
   const fetchLocationName = async (lat: number, lng: number) => {
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14&accept-language=th`)
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14&accept-language=th&email=hello@cathunt.app`)
       const data = await res.json()
       console.log('nominatim address:', data.address) // เอาไว้ debug ดูว่าจริงๆ field ไหนมา
       
@@ -633,7 +633,7 @@ export default function HuntPage() {
                     <div>
                       <h3 className="font-black text-2xl tracking-tight text-zinc-900">{matchedCat?.name}</h3>
                       <p className="text-xs font-medium text-zinc-500 flex items-center">
-                        <MapPin className="h-3 w-3 mr-1" /> {location?.name ? `Near ${location.name}` : 'Auto-detected'}
+                      <MapPin className="h-3 w-3 mr-1" /> {location?.name ? (location.name === 'Unknown Area' ? 'Unknown Area' : `Near ${location.name}`) : 'Auto-detected'}
                       </p>
                     </div>
                   </div>
