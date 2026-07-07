@@ -300,9 +300,14 @@ export default function FeedPage() {
 
   async function initFeed() {
     setIsLoading(true)
-    await loadUserContext()
-    await fetchMore()
-    setIsLoading(false)
+    try {
+      await loadUserContext()
+      await fetchMore()
+    } catch (err) {
+      console.error('initFeed error:', err)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   async function fetchMore() {

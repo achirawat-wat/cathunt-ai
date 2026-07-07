@@ -21,32 +21,48 @@ export default function RootLayout({
   // 1. ระบบเช็ค Auth
   useEffect(() => {
     const fetchProfile = async (userId: string) => {
-      const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle()
-      setProfile(data)
+      try {
+        const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle()
+        setProfile(data)
+      } catch (err) {
+        console.error("fetchProfile error:", err)
+      }
     }
 
     const initializeAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) {
-        setUser(session.user)
-        await fetchProfile(session.user.id)
-      } else {
-        setUser(null)
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession()
+        if (error) console.error("getSession error:", error)
+        
+        if (session?.user) {
+          setUser(session.user)
+          await fetchProfile(session.user.id)
+        } else {
+          setUser(null)
+        }
+      } catch (err) {
+        console.error("initializeAuth error:", err)
+      } finally {
+        setLoading(false)
       }
-      setLoading(false)
     }
 
     initializeAuth()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        setUser(session.user)
-        await fetchProfile(session.user.id)
-      } else {
-        setUser(null)
-        setProfile(null)
+      try {
+        if (session?.user) {
+          setUser(session.user)
+          await fetchProfile(session.user.id)
+        } else {
+          setUser(null)
+          setProfile(null)
+        }
+      } catch (err) {
+        console.error("onAuthStateChange error:", err)
+      } finally {
+        setLoading(false)
       }
-      setLoading(false)
     })
 
     return () => subscription.unsubscribe()
