@@ -189,8 +189,12 @@ export default function HuntPage() {
           if (Array.isArray(result.matches)) {
             const simMap: Record<string, number> = {}
             result.matches.forEach((m: any) => {
-              if (m?.id != null && typeof m.similarity === 'number') {
-                simMap[m.id] = m.similarity
+              const catId = m?.id || m?.cat_id
+              if (catId != null && typeof m.similarity === 'number') {
+                // เลือกค่าที่ % สูงที่สุดเท่านั้น (ป้องกัน encounter เก่าๆ ที่ % ต่ำกว่ามาทับ)
+                if (simMap[catId] === undefined || m.similarity > simMap[catId]) {
+                  simMap[catId] = m.similarity
+                }
               }
             })
             setCatSimilarities(simMap)

@@ -6,6 +6,7 @@ import { Cat, Loader2, Check, Bell, X } from 'lucide-react'
 import FeedCard from '@/components/feed-card'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { useFeedStore } from '@/store/feedStore'
 
 // 🕒 ฟังก์ชันแปลงเวลาแบบ Social App
 function timeAgo(dateString: string) {
@@ -89,10 +90,12 @@ const PULL_RESISTANCE = 0.5 // ยิ่งค่าน้อย ยิ่งล
 export default function FeedPage() {
   const { user } = useAuthStore()
 
-  const [feeds, setFeeds] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const feeds = useFeedStore(s => s.feeds)
+  const hasMore = useFeedStore(s => s.hasMore)
+  const initialized = useFeedStore(s => s.initialized)
+  
+  const [isLoading, setIsLoading] = useState(!initialized)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const [hasMore, setHasMore] = useState(true)
 
   // 🔔 Notifications state
   const [notifications, setNotifications] = useState<any[]>([])
@@ -109,17 +112,7 @@ export default function FeedPage() {
   const sentinelRef = useRef<HTMLDivElement>(null)
   const viewObserverRef = useRef<IntersectionObserver | null>(null)
 
-  // สถานะภายในที่ต้องอ่าน/เขียนแบบ sync ระหว่าง async loop (ไม่ผูกกับ re-render)
-  const seenIdsRef = useRef<Set<string>>(new Set())
-  const followedCatIdsRef = useRef<Set<string>>(new Set())
-  const bufferRef = useRef<{ raw: any; score: number }[]>([])
-  const allFetchedRawRef = useRef<any[]>([])
-  const offsetRef = useRef(0)
-  const dbExhaustedRef = useRef(false)
-  const shownIdsRef = useRef<Set<string>>(new Set()) // กันโพสต์ซ้ำในเซสชั่นนี้ (ทั้ง path ปกติและ path สำรอง)
   const isLoadingMoreRef = useRef(false)
-  const hasMoreRef = useRef(true)
-  const initializedRef = useRef(false)
 
   // 🔔 โหลดแจ้งเตือน
   useEffect(() => {
@@ -172,11 +165,37 @@ export default function FeedPage() {
   }
 
   useEffect(() => {
-    if (!user || initializedRef.current) return
-    initializedRef.current = true
-    initFeed()
+    if (!user) return
+    if (!initialized) {
+      initFeed()
+    } else if (scrollContainerRef.current) {
+      // Restore scroll position
+      scrollContainerRef.current.scrollTop = useFeedStore.getState().scrollPosition
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
+
+  // Track scroll position on unmount / occasionally
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    let scrollTimeout: NodeJS.Timeout | null = null
+    const handleScroll = () => {
+      if (!scrollTimeout) {
+        scrollTimeout = setTimeout(() => {
+          useFeedStore.setState({ scrollPosition: container.scrollTop })
+          scrollTimeout = null
+        }, 150) // Throttle save to avoid lag
+      }
+    }
+
+    container.addEventListener('scroll', handleScroll, { passive: true })
+    return () => {
+      container.removeEventListener('scroll', handleScroll)
+      if (scrollTimeout) clearTimeout(scrollTimeout)
+    }
+  }, [])
 
   // 👀 IntersectionObserver สำหรับมาร์คว่าโพสต์ไหน "เห็นแล้ว"
   useEffect(() => {
@@ -278,8 +297,13 @@ export default function FeedPage() {
 
   async function markAsSeen(encounterId: string) {
     if (!user) return
-    if (seenIdsRef.current.has(encounterId)) return
-    seenIdsRef.current.add(encounterId) // optimistic กันยิงซ้ำในรอบเดียวกัน
+    const { seenIds } = useFeedStore.getState()
+    if (seenIds.has(encounterId)) return
+    
+    // optimistic กันยิงซ้ำในรอบเดียวกัน
+    const newSeenIds = new Set(seenIds)
+    newSeenIds.add(encounterId)
+    useFeedStore.setState({ seenIds: newSeenIds })
 
     const { error } = await supabase
       .from('post_views')
@@ -301,10 +325,10 @@ export default function FeedPage() {
     if (viewsError) console.error('load seen posts error:', viewsError)
     if (followsError) console.error('load follows error:', followsError)
 
-    seenIdsRef.current = new Set((viewsData || []).map((v: any) => v.encounter_id))
-    followedCatIdsRef.current = new Set(
-      (followsData || []).map((f: any) => f.cat_id).filter(Boolean)
-    )
+    useFeedStore.setState({
+      seenIds: new Set((viewsData || []).map((v: any) => v.encounter_id)),
+      followedCatIds: new Set((followsData || []).map((f: any) => f.cat_id).filter(Boolean))
+    })
   }
 
   async function initFeed() {
@@ -312,6 +336,7 @@ export default function FeedPage() {
     try {
       await loadUserContext()
       await fetchMore()
+      useFeedStore.setState({ initialized: true })
     } catch (err) {
       console.error('initFeed error:', err)
     } finally {
@@ -321,15 +346,21 @@ export default function FeedPage() {
 
   async function fetchMore() {
     if (!user) return
-    if (isLoadingMoreRef.current || !hasMoreRef.current) return
+    const state = useFeedStore.getState()
+    if (isLoadingMoreRef.current || !state.hasMore) return
 
     isLoadingMoreRef.current = true
     setIsLoadingMore(true)
 
     try {
+      let currentBuffer = [...state.buffer]
+      let currentAllFetched = [...state.allFetchedRaw]
+      let currentOffset = state.offset
+      let currentDbExhausted = state.dbExhausted
+
       // 1. เติม buffer จาก DB ทีละ chunk จนกว่าจะพอสำหรับหน้านี้ หรือดึงจน DB หมด
-      while (bufferRef.current.length < PAGE_SIZE && !dbExhaustedRef.current) {
-        const from = offsetRef.current
+      while (currentBuffer.length < PAGE_SIZE && !currentDbExhausted) {
+        const from = currentOffset
         const to = from + CHUNK_SIZE - 1
 
         const { data, error } = await supabase
@@ -344,58 +375,71 @@ export default function FeedPage() {
           break
         }
 
-        offsetRef.current += CHUNK_SIZE
+        currentOffset += CHUNK_SIZE
 
         if (!data || data.length === 0) {
-          dbExhaustedRef.current = true
+          currentDbExhausted = true
           break
         }
         if (data.length < CHUNK_SIZE) {
-          dbExhaustedRef.current = true
+          currentDbExhausted = true
         }
 
-        allFetchedRawRef.current.push(...data)
+        currentAllFetched.push(...data)
 
-        // กันไม่ให้เอาโพสต์ที่เคย "เห็น" มาก่อน (จาก post_views) หรือ "โชว์ไปแล้วในเซสชั่นนี้" กลับเข้า buffer อีก
+        const currentState = useFeedStore.getState()
         const unseen = data.filter(
-          (row: any) => !seenIdsRef.current.has(row.id) && !shownIdsRef.current.has(row.id)
+          (row: any) => !currentState.seenIds.has(row.id) && !currentState.shownIds.has(row.id)
         )
-        const scored = unseen.map((row: any) => ({ raw: row, score: scorePost(row, followedCatIdsRef.current) }))
+        const scored = unseen.map((row: any) => ({ raw: row, score: scorePost(row, currentState.followedCatIds) }))
 
-        bufferRef.current = [...bufferRef.current, ...scored].sort((a, b) => b.score - a.score)
+        currentBuffer = [...currentBuffer, ...scored].sort((a, b) => b.score - a.score)
       }
 
-      // 2. ถ้าดึงจน DB หมดแล้ว buffer ยังว่าง -> ลองหาโพสต์ที่ "ยังไม่เคยโชว์ในเซสชั่นนี้" มาเติมแทน
-      //    (เผื่อ user เคยเห็นโพสต์นี้จากทริปก่อนหน้า แต่ยังไม่เห็นในรอบนี้)
-      //    ถ้าไม่เหลือจริงๆ (ทุกโพสต์ถูกโชว์ในเซสชั่นนี้ไปหมดแล้ว) ให้จบฟีดตรงนี้ ไม่วนซ้ำ
-      if (bufferRef.current.length === 0 && dbExhaustedRef.current) {
-        const unshownThisSession = allFetchedRawRef.current.filter(
-          (row: any) => !shownIdsRef.current.has(row.id)
+      // Sync state back
+      useFeedStore.setState({
+        buffer: currentBuffer,
+        allFetchedRaw: currentAllFetched,
+        offset: currentOffset,
+        dbExhausted: currentDbExhausted
+      })
+      
+      let finalState = useFeedStore.getState()
+
+      if (finalState.buffer.length === 0 && finalState.dbExhausted) {
+        const unshownThisSession = finalState.allFetchedRaw.filter(
+          (row: any) => !finalState.shownIds.has(row.id)
         )
 
         if (unshownThisSession.length === 0) {
-          hasMoreRef.current = false
-          setHasMore(false)
+          useFeedStore.setState({ hasMore: false })
         } else {
           const shuffled = shuffle(unshownThisSession)
-          bufferRef.current = shuffled.map((row: any) => ({
-            raw: row,
-            score: scorePost(row, followedCatIdsRef.current)
-          }))
+          useFeedStore.setState({
+            buffer: shuffled.map((row: any) => ({
+              raw: row,
+              score: scorePost(row, finalState.followedCatIds)
+            }))
+          })
         }
       }
 
-      // 3. หยิบชุดถัดไปไปแสดงผล
-      const nextBatch = bufferRef.current.slice(0, PAGE_SIZE)
-      bufferRef.current = bufferRef.current.slice(PAGE_SIZE)
+      // Re-fetch state for next batch processing
+      finalState = useFeedStore.getState()
+      const nextBatch = finalState.buffer.slice(0, PAGE_SIZE)
+      const remainingBuffer = finalState.buffer.slice(PAGE_SIZE)
 
       if (nextBatch.length > 0) {
-        nextBatch.forEach((item) => shownIdsRef.current.add(item.raw.id))
-        setFeeds((prev) => [...prev, ...nextBatch.map((item) => formatPost(item.raw))])
-      } else if (hasMoreRef.current) {
-        // เผื่อ edge case: ไม่มีอะไรให้เพิ่มแต่ hasMore ยังไม่ถูก set false (เช่น error กลางทาง)
-        hasMoreRef.current = false
-        setHasMore(false)
+        const newShownIds = new Set(finalState.shownIds)
+        nextBatch.forEach((item) => newShownIds.add(item.raw.id))
+        
+        useFeedStore.setState({
+          buffer: remainingBuffer,
+          shownIds: newShownIds,
+          feeds: [...finalState.feeds, ...nextBatch.map((item) => formatPost(item.raw))]
+        })
+      } else if (finalState.hasMore) {
+        useFeedStore.setState({ hasMore: false })
       }
     } finally {
       isLoadingMoreRef.current = false
@@ -410,14 +454,7 @@ export default function FeedPage() {
 
     setIsRefreshing(true)
 
-    bufferRef.current = []
-    allFetchedRawRef.current = []
-    offsetRef.current = 0
-    dbExhaustedRef.current = false
-    shownIdsRef.current = new Set()
-    hasMoreRef.current = true
-    setHasMore(true)
-    setFeeds([])
+    useFeedStore.getState().resetFeed()
 
     try {
       await loadUserContext()
@@ -511,7 +548,7 @@ export default function FeedPage() {
       {/* 📱 Feed Content */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 px-6 pt-[104px] pb-[120px] space-y-6 overflow-y-auto no-scrollbar scroll-smooth overscroll-y-contain"
+        className="flex-1 px-6 pt-[104px] pb-[120px] space-y-6 overflow-y-auto no-scrollbar overscroll-y-contain"
       >
 
         {/* 🔄 Pull-to-refresh indicator: ดันเนื้อหาลงตามระยะที่ลาก แล้วสปริงกลับตอนปล่อย */}

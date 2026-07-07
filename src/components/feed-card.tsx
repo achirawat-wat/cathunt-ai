@@ -333,13 +333,6 @@ export default function FeedCard({ feed }: FeedCardProps) {
         </div>
       )}
 
-      {/* 🆕 New post ribbon มุมซ้ายบนของรูป */}
-      {isNew && (
-        <div className="absolute top-4 left-4 z-20 flex items-center space-x-1 bg-orange-500 text-white text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full shadow-lg animate-in fade-in zoom-in-95">
-          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
-          <span>New</span>
-        </div>
-      )}
 
       {/* 👤 Card Header */}
       <div className="flex justify-between items-center p-4">
@@ -382,6 +375,13 @@ export default function FeedCard({ feed }: FeedCardProps) {
         className="w-full aspect-square md:aspect-[4/3] bg-zinc-100 relative overflow-hidden dark:bg-zinc-800 cursor-pointer select-none group"
         onClick={handleImageTap}
       >
+        {/* 🆕 New post ribbon มุมซ้ายบนของรูป */}
+        {isNew && (
+          <div className="absolute top-4 left-4 z-20 flex items-center space-x-1 bg-orange-500 text-white text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full shadow-lg animate-in fade-in zoom-in-95">
+            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+            <span>New</span>
+          </div>
+        )}
         <img src={feed.image} alt={`${feed.cat.name}`} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" loading="lazy" />
         {showHeartOverlay && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 bg-black/10">
