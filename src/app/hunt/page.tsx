@@ -55,6 +55,39 @@ export default function HuntPage() {
   // ลำดับมุมที่ต้องการให้ถ่าย (หลังจากถ่ายหน้าปกแล้ว)
   const trainingAngles = ["Front", "Left side", "Right side"]
 
+  const fetchLocationName = async (lat: number, lng: number) => {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14&accept-language=th&email=hello@cathunt.app`)
+      const data = await res.json()
+      console.log('nominatim address:', data.address) // เอาไว้ debug ดูว่าจริงๆ field ไหนมา
+      
+      if (data.error) return 'Unknown Area'
+
+      if (data.address) {
+        const name = (
+          data.address.suburb ||
+          data.address.neighbourhood ||
+          data.address.village ||
+          data.address.quarter ||
+          data.address.city_district ||
+          data.address.district ||
+          data.address.town ||
+          data.address.city ||
+          data.address.municipality ||
+          data.address.state_district ||
+          data.address.county ||
+          data.address.province ||
+          data.address.state
+        )
+        if (name) return name
+      }
+
+      return data.display_name ? data.display_name.split(',')[0] : 'Unknown Area'
+    } catch (error) {
+      return 'Unknown Area'
+    }
+  }
+
   useEffect(() => {
     if (!user) {
       router.push('/')
@@ -105,55 +138,36 @@ export default function HuntPage() {
     }
     fetchCatsAndEncounters()
 
-    return () => {
-      if (stream) stream.getTracks().forEach(track => track.stop())
-    }
-  }, [user, router])
-
-  const fetchLocationName = async (lat: number, lng: number) => {
-    try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14&accept-language=th&email=hello@cathunt.app`)
-      const data = await res.json()
-      console.log('nominatim address:', data.address) // เอาไว้ debug ดูว่าจริงๆ field ไหนมา
-      
-      if (data.error) return 'Unknown Area'
-
-      if (data.address) {
-        const name = (
-          data.address.suburb ||
-          data.address.neighbourhood ||
-          data.address.village ||
-          data.address.quarter ||
-          data.address.city_district ||
-          data.address.district ||
-          data.address.town ||
-          data.address.city ||
-          data.address.municipality ||
-          data.address.state_district ||
-          data.address.county ||
-          data.address.province ||
-          data.address.state
-        )
-        if (name) return name
-      }
-
-      return data.display_name ? data.display_name.split(',')[0] : 'Unknown Area'
-    } catch (error) {
-      return 'Unknown Area'
-    }
-  }
-
-  const handleCapture = async (isTrainingStep = false) => {
-    if (navigator.vibrate) navigator.vibrate(50)
-
-    if (!isTrainingStep && navigator.geolocation) {
+    // 🌍 ขอตำแหน่งล่วงหน้าตอนเปิดกล้องเลย จะได้มีเวลาให้ user กด Allow
+    if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           const lat = position.coords.latitude
           const lng = position.coords.longitude
           setLocation({ lat, lng, name: await fetchLocationName(lat, lng) })
         },
-        () => { }, { enableHighAccuracy: true, timeout: 5000 }
+        (error) => console.warn('Location request on mount failed:', error),
+        { enableHighAccuracy: true }
+      )
+    }
+
+    return () => {
+      if (stream) stream.getTracks().forEach(track => track.stop())
+    }
+  }, [user, router])
+
+  const handleCapture = async (isTrainingStep = false) => {
+    if (navigator.vibrate) navigator.vibrate(50)
+
+    // ถ้ายังไม่ได้ location ให้ลองขอใหม่ แต่ไม่ใส่ timeout แล้วเผื่อเค้าเพิ่งกด
+    if (!isTrainingStep && !location && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const lat = position.coords.latitude
+          const lng = position.coords.longitude
+          setLocation({ lat, lng, name: await fetchLocationName(lat, lng) })
+        },
+        () => { }, { enableHighAccuracy: true }
       )
     }
 
