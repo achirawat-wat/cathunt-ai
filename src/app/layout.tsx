@@ -76,6 +76,13 @@ export default function RootLayout({
 
   return (
     <html lang="en">
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="CatHunt" />
+      </head>
       <body className="flex justify-center bg-zinc-100 dark:bg-zinc-950">
         <div className="relative flex h-screen w-full max-w-[500px] flex-col bg-white shadow-xl dark:bg-zinc-900 border-x border-zinc-200 dark:border-zinc-800 overflow-hidden">
           
