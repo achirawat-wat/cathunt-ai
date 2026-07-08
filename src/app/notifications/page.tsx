@@ -102,15 +102,10 @@ export default function NotificationsPage() {
         ) : (
           <div className="space-y-4">
             {notifications.map(notif => {
-              const NotificationWrapper = notif.encounter_id ? Link : 'div'
-              const wrapperProps = notif.encounter_id ? { href: `/post/${notif.encounter_id}` } : {}
-
-              return (
-                <NotificationWrapper
-                  key={notif.id}
-                  {...wrapperProps}
-                  className={`flex items-start space-x-4 p-4 rounded-[1.5rem] ${notif.is_read ? 'bg-white dark:bg-zinc-900' : 'bg-orange-50 dark:bg-orange-500/10'} shadow-sm border border-zinc-100 dark:border-zinc-800 block hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors`}
-                >
+              const className = `flex items-start space-x-4 p-4 rounded-[1.5rem] ${notif.is_read ? 'bg-white dark:bg-zinc-900' : 'bg-orange-50 dark:bg-orange-500/10'} shadow-sm border border-zinc-100 dark:border-zinc-800 block hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors`
+              
+              const innerContent = (
+                <>
                   <img src={notif.actor?.avatar_url || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?q=80&w=150'} className="w-11 h-11 rounded-full object-cover shrink-0 bg-zinc-200" alt="avatar" />
                   <div className="flex-1 min-w-0 pt-0.5">
                     <p className="text-sm text-zinc-900 dark:text-white leading-snug">
@@ -123,7 +118,21 @@ export default function NotificationsPage() {
                   {notif.encounter?.image_url && (
                     <img src={notif.encounter.image_url} className="w-14 h-14 rounded-[1rem] object-cover shrink-0 border border-zinc-100 dark:border-zinc-800" alt="post" />
                   )}
-                </NotificationWrapper>
+                </>
+              )
+
+              if (notif.encounter_id) {
+                return (
+                  <Link key={notif.id} href={`/post/${notif.encounter_id}`} className={className}>
+                    {innerContent}
+                  </Link>
+                )
+              }
+
+              return (
+                <div key={notif.id} className={className}>
+                  {innerContent}
+                </div>
               )
             })}
           </div>
