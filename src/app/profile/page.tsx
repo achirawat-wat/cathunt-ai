@@ -633,10 +633,12 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
                 <X className="w-5 h-5 text-zinc-600 dark:text-zinc-300" />
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-4 overflow-y-auto no-scrollbar pb-8">
-              {displayPosts.map((post) => (
-                <PostCard post={post} key={post.id} onClick={() => setShowAllModal(false)} />
-              ))}
+            <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar">
+              <div className="grid grid-cols-2 gap-4 pb-8">
+                {displayPosts.map((post) => (
+                  <PostCard post={post} key={post.id} onClick={() => setShowAllModal(false)} />
+                ))}
+              </div>
             </div>
           </div>
         </div>
