@@ -59,7 +59,7 @@ export default function HuntPage() {
     try {
       const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14`, {
         headers: {
-          'Accept-Language': 'th,en;q=0.9',
+          'Accept-Language': 'en-US,en;q=0.9',
           'User-Agent': 'CatHunt-App/1.0'
         }
       })
@@ -155,7 +155,10 @@ export default function HuntPage() {
           const lng = position.coords.longitude
           setLocation({ lat, lng, name: await fetchLocationName(lat, lng) })
         },
-        (error) => console.warn('Location request on mount failed:', error),
+        (error) => {
+          console.warn('Location request on mount failed:', error)
+          setLocation(null)
+        },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 } // 👈 เพิ่ม Timeout 10 วิ
       )
     }
@@ -176,7 +179,10 @@ export default function HuntPage() {
           const lng = position.coords.longitude
           setLocation({ lat, lng, name: await fetchLocationName(lat, lng) })
         },
-        (error) => console.warn('Capture location fallback failed:', error),
+        (error) => {
+          console.warn('Capture location fallback failed:', error)
+          setLocation(null)
+        },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 } // 👈 เพิ่ม Timeout 10 วิ
       )
     }
