@@ -2,6 +2,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { Cat, Loader2, Check, Bell, X } from 'lucide-react'
 import FeedCard from '@/components/feed-card'
 import { supabase } from '@/lib/supabase'
@@ -101,7 +102,6 @@ export default function FeedPage() {
   // 🔔 Notifications state
   const [notifications, setNotifications] = useState<any[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
-  const [showNotifications, setShowNotifications] = useState(false)
 
   // 🔄 Pull-to-refresh state
   const [pullDistance, setPullDistance] = useState(0)
@@ -158,12 +158,7 @@ export default function FeedPage() {
     }
   }, [user])
 
-  const markNotificationsAsRead = async () => {
-    if (unreadCount === 0 || !user) return
-    await supabase.from('notifications').update({ is_read: true }).eq('recipient_id', user.id).eq('is_read', false)
-    setUnreadCount(0)
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
-  }
+
 
   useEffect(() => {
     if (!user) return
@@ -476,43 +471,7 @@ export default function FeedPage() {
   return (
     <main className="relative flex h-full w-full flex-col bg-zinc-50 dark:bg-zinc-950 overflow-hidden">
 
-      {/* 🔔 Notifications Slide-over */}
-      {showNotifications && (
-        <div className="absolute inset-0 z-[2000] flex flex-col bg-zinc-50 dark:bg-zinc-950 animate-in slide-in-from-right-full duration-300 pointer-events-auto">
-          <div className="flex items-center justify-between px-6 py-5 bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 shadow-sm">
-            <h2 className="text-xl font-black text-zinc-900 dark:text-white tracking-wide">Notifications</h2>
-            <button onClick={() => setShowNotifications(false)} className="w-10 h-10 bg-zinc-50 dark:bg-zinc-800 rounded-full flex items-center justify-center active:scale-95">
-              <X className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-4">
-            {notifications.length === 0 ? (
-              <div className="text-center py-20 text-zinc-400 font-medium flex flex-col items-center">
-                <Bell className="w-12 h-12 mb-4 text-zinc-300 dark:text-zinc-700" />
-                <p>No notifications yet.</p>
-              </div>
-            ) : (
-              notifications.map(notif => (
-                <div key={notif.id} className={`flex items-start space-x-4 p-4 rounded-[1.5rem] ${notif.is_read ? 'bg-white dark:bg-zinc-900' : 'bg-orange-50 dark:bg-orange-500/10'} shadow-sm border border-zinc-100 dark:border-zinc-800`}>
-                  <img src={notif.actor?.avatar_url || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?q=80&w=150'} className="w-11 h-11 rounded-full object-cover shrink-0 bg-zinc-200" alt="avatar" />
-                  <div className="flex-1 min-w-0 pt-0.5">
-                    <p className="text-sm text-zinc-900 dark:text-white leading-snug">
-                      <span className="font-black">{notif.actor?.username || 'Someone'}</span>
-                      {notif.type === 'like' ? ' liked your post' :
-                        notif.type === 'follow_post' ? ` spotted ${notif.cat?.name}` : ' interacted with you'}
-                    </p>
-                    <span className="text-[10px] font-bold tracking-widest text-zinc-400 uppercase mt-1 inline-block">{timeAgo(notif.created_at)}</span>
-                  </div>
-                  {notif.encounter?.image_url && (
-                    <img src={notif.encounter.image_url} className="w-14 h-14 rounded-[1rem] object-cover shrink-0 border border-zinc-100 dark:border-zinc-800" alt="post" />
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
+      {/* Notifications Slide-over removed, now using a dedicated page */}
 
       {/* 🌟 Floating Header — กดแล้วเลื่อนกลับขึ้นบนสุด */}
       <div className="absolute top-6 left-0 right-0 z-[1000] px-6 pointer-events-none">
@@ -529,19 +488,15 @@ export default function FeedPage() {
           </button>
 
           <div className="relative pointer-events-auto shrink-0">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setShowNotifications(true)
-                markNotificationsAsRead()
-              }}
+            <Link
+              href="/notifications"
               className="w-10 h-10 bg-zinc-50 hover:bg-zinc-100 rounded-full flex items-center justify-center text-zinc-600 transition-colors dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-300 active:scale-95"
             >
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && (
                 <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-zinc-900 animate-pulse"></span>
               )}
-            </button>
+            </Link>
           </div>
         </div>
       </div>
